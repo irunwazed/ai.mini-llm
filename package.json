@@ -1,0 +1,37 @@
+{
+  "name": "llm-from-scratch",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "description": "Belajar LLM dari nol + chatbot aturan pemerintah Indonesia + GPT mini (Bun + TypeScript, tanpa library ML)",
+  "scripts": {
+    "train": "bun src/commands/train.ts",
+    "search": "bun src/commands/search.ts",
+    "chat": "bun src/commands/chat.ts",
+    "eval": "bun src/commands/eval.ts",
+    "typecheck": "tsc --noEmit",
+    "lesson:1": "bun lessons/01_bigram.ts",
+    "lesson:2": "bun lessons/02_ngram.ts",
+    "train-gpt": "bun src/commands/train-gpt.ts",
+    "generate": "bun src/commands/generate.ts",
+    "test-gpt": "bun src/commands/test-gpt.ts",
+    "lesson:3": "bun lessons/03_bpe.ts",
+    "lesson:4": "bun lessons/04_attention.ts",
+    "lesson:5": "bun lessons/05_mini_gpt.ts",
+    "fetch-data": "bun src/commands/fetch-data.ts",
+    "chat-gpt": "bun src/commands/chat-gpt.ts",
+    "make-chat-data": "bun src/gpt/chat-data.ts",
+    "index-wiki": "bun src/commands/index-wiki.ts",
+    "web": "bun src/commands/web.ts",
+    "eval-chat": "bun src/commands/eval-chat.ts",
+    "eval-reasoning": "bun src/commands/eval-reasoning.ts"
+  },
+  "dependencies": {
+    "mammoth": "^1.13.0",
+    "unpdf": "^2.1.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^7.0.2"
+  }
+}

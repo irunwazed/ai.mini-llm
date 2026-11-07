@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLM dari Nol — Chatbot & Cara Kerja</title>
+<style>
+  :root {
+    --bg: #f6f5f1; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6a64; --line: #e3e1d9;
+    --aturan: #1f6f5c; --wiki: #2f5fa7; --obrolan: #8a4fb0; --tidak: #a5562b; --memori: #a37a12; --detail: #555;
+    --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.55 system-ui, "Segoe UI", sans-serif; color: var(--ink); background: var(--bg); height: 100vh; display: flex; flex-direction: column; }
+  header { padding: 10px 20px; border-bottom: 1px solid var(--line); background: var(--panel); display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; }
+  header .info { color: var(--muted); font-size: 12.5px; }
+  header .kontrol { margin-left: auto; display: flex; gap: 10px; align-items: center; font-size: 13px; flex-wrap: wrap; }
+  select, input[type=range] { font: inherit; }
+  .tombol { font: inherit; font-size: 13px; padding: 4px 10px; border: 1px solid var(--line); background: var(--bg); border-radius: 8px; cursor: pointer; }
+  .tombol:hover { background: #ecebe4; }
+  main { flex: 1; display: grid; grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.15fr); min-height: 0; }
+  @media (max-width: 1000px) { main { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; } }
+
+  /* ---------- chat ---------- */
+  #chat { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
+  #pesan { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+  .msg { max-width: 92%; padding: 10px 14px; border-radius: 12px; white-space: pre-wrap; word-wrap: break-word; }
+  .msg.user { align-self: flex-end; background: var(--ink); color: #fff; border-bottom-right-radius: 4px; }
+  .msg.bot { align-self: flex-start; background: var(--panel); border: 1px solid var(--line); border-bottom-left-radius: 4px; cursor: pointer; }
+  .msg.bot.aktif { outline: 2px solid var(--ink); }
+  .meta { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; font-size: 12px; color: var(--muted); }
+  .badge { padding: 1px 8px; border-radius: 999px; color: #fff; font-weight: 600; font-size: 11px; letter-spacing: .3px; text-transform: uppercase; }
+  .b-aturan { background: var(--aturan); } .b-wiki { background: var(--wiki); } .b-obrolan { background: var(--obrolan); }
+  .b-tidak-ditemukan { background: var(--tidak); } .b-memori { background: var(--memori); } .b-detail { background: var(--detail); } .b-maksud { background: #3d7a8a; } .b-penalaran { background: #b5442e; } .b-internet { background: #2f6f4f; } .b-klarifikasi { background: #6b6a64; }
+  .agent { border: 1px solid var(--line); border-radius: 8px; background: #fff; padding: 8px 10px; margin: 6px 0; font-size: 13px; }
+  .agent.ditolak { border-color: #e6b8a2; background: #fdf6f2; }
+  .agent b { display: inline-block; min-width: 52px; }
+  .label { color: var(--muted); font-size: 12px; margin-top: 6px; font-style: italic; }
+  .ref { color: var(--wiki); font-weight: 600; cursor: pointer; }
+  .simpan { display: block; margin-top: 4px; font-size: 11px; color: #cfcfcf; cursor: pointer; text-align: right; }
+  .simpan:hover { color: #fff; text-decoration: underline; }
+  .sumber { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+  .sumber details { font-size: 13px; background: var(--bg); border-radius: 8px; padding: 4px 8px; }
+  .sumber summary { cursor: pointer; color: var(--muted); }
+  .sumber pre { white-space: pre-wrap; font: 13px/1.5 system-ui, sans-serif; margin: 6px 0 2px; max-height: 260px; overflow-y: auto; }
+  .contoh { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 16px; background: var(--panel); border-top: 1px solid var(--line); }
+  .contoh button { font-size: 12px; border: 1px solid var(--line); background: var(--bg); border-radius: 999px; padding: 3px 10px; cursor: pointer; }
+  form.kirim { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); background: var(--panel); }
+  form input { flex: 1; font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
+  form button { font: inherit; padding: 10px 18px; border: 0; border-radius: 10px; background: var(--ink); color: #fff; cursor: pointer; }
+  #memori { border-top: 1px solid var(--line); background: var(--panel); padding: 8px 16px; font-size: 13px; }
+  #memori summary { cursor: pointer; color: var(--muted); }
+  #memori ul { list-style: none; padding: 0; margin: 8px 0; max-height: 140px; overflow-y: auto; }
+  #memori li { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; border-bottom: 1px dashed var(--line); }
+  #memori li span.id { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+  #memori li button { margin-left: auto; border: 0; background: none; color: var(--tidak); cursor: pointer; }
+  #memori form { display: flex; gap: 8px; }
+  #memori form input { padding: 6px 10px; }
+  #memori form button { padding: 6px 12px; }
+
+  /* ---------- proses ---------- */
+  #proses { overflow-y: auto; padding: 18px 22px 40px; min-height: 0; }
+  #proses h2 { font-size: 15px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+  .alur { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 18px; font-size: 12px; }
+  .alur span.n { padding: 4px 10px; border-radius: 8px; border: 1px dashed var(--line); color: var(--muted); }
+  .alur span.n.lewat { border-style: solid; color: var(--ink); background: #fff; }
+  .alur span.n.pilih { border-style: solid; color: #fff; background: var(--ink); }
+  .alur span.p { color: #bdbab0; }
+  .langkah { border-left: 2px solid var(--line); padding: 2px 0 16px 16px; position: relative; }
+  .langkah::before { content: ""; position: absolute; left: -6px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--panel); border: 2px solid var(--ink); }
+  .langkah .judul { font-weight: 650; }
+  .waktu { color: var(--muted); font-size: 12px; font-family: var(--mono); margin-left: 6px; }
+  .hasil { color: var(--muted); font-size: 13px; }
+  h4 { font-size: 13.5px; margin: 14px 0 4px; }
+  .awam { background: #fffbea; border: 1px solid #efe2b0; border-radius: 8px; padding: 8px 10px; font-size: 13px; margin: 6px 0; }
+  .awam::before { content: "Penjelasan sederhana: "; font-weight: 650; }
+  .rumus { font-family: var(--mono); font-size: 12px; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0; white-space: pre-wrap; overflow-x: auto; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .chip { font-family: var(--mono); font-size: 12px; background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; white-space: pre; }
+  .chip.dasar { background: #f1efe7; }
+  .chip.khusus { background: var(--ink); color: #fff; }
+  .chip.ya { border-color: #8fc7b5; background: #eaf6f1; } .chip.tidak { border-color: #e6b8a2; background: #fbefe9; text-decoration: line-through; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; margin-top: 6px; background: #fff; }
+  th, td { border-bottom: 1px solid var(--line); padding: 4px 6px; text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  td.num { font-family: var(--mono); text-align: right; white-space: nowrap; }
+  td.mono { font-family: var(--mono); font-size: 11.5px; white-space: nowrap; }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; min-width: 60px; }
+  .bar > i { display: block; height: 100%; background: var(--ink); }
+  .vek { display: inline-flex; gap: 2px; }
+  .vek span { font-family: var(--mono); font-size: 10.5px; padding: 1px 3px; border-radius: 3px; min-width: 38px; text-align: right; }
+  .peta { overflow-x: auto; margin-top: 6px; }
+  .peta table { width: auto; }
+  .peta td { width: 26px; height: 22px; padding: 0; text-align: center; font-size: 9.5px; font-family: var(--mono); border: 1px solid #fff; }
+  .peta th { font-size: 10.5px; font-family: var(--mono); white-space: pre; padding: 0 4px; font-weight: 500; }
+  .peta th.kol { writing-mode: vertical-rl; transform: rotate(180deg); height: 70px; }
+  .pilih-lh { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .pilih-lh button { font-size: 11.5px; padding: 2px 8px; border: 1px solid var(--line); background: #fff; border-radius: 6px; cursor: pointer; }
+  .pilih-lh button.aktif { background: var(--ink); color: #fff; }
+  .token-gen { display: inline-flex; flex-direction: column; align-items: center; margin: 2px; font-family: var(--mono); font-size: 12px; cursor: help; }
+  .token-gen b { background: #fff; border: 1px solid var(--line); border-radius: 4px; padding: 1px 4px; white-space: pre; font-weight: 500; }
+  .token-gen small { color: var(--muted); }
+  .kosong { color: var(--muted); }
+  #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 8px 14px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  #toast.tampil { opacity: 1; }
+  #salinManual { position: fixed; inset: 10% 15%; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: none; flex-direction: column; gap: 8px; box-shadow: 0 10px 40px rgba(0,0,0,.15); }
+  #salinManual textarea { flex: 1; font: 12px/1.5 var(--mono); }
+</style>
+</head>
+<body>
+<header>
+  <h1>LLM dari Nol — Chatbot</h1>
+  <div class="info" id="info">memuat model…</div>
+  <div class="kontrol">
+    <label>Mode
+      <select id="mode">
+        <option value="otomatis">Otomatis (semua jalur)</option>
+        <option value="aturan">Hanya dokumen aturan</option>
+        <option value="wiki">Hanya Wikipedia</option>
+        <option value="gpt">Hanya GPT</option>
+        <option value="penalaran">Hanya penalaran</option>
+        <option value="agent">Agent (semua mode + internet)</option>
+      </select>
+    </label>
+    <label title="Suhu sampling GPT: kecil = konsisten, besar = acak">Suhu GPT <input type="range" id="suhu" min="0.1" max="1.5" step="0.1" value="0.4"> <span id="suhuNilai">0.4</span></label>
+    <button class="tombol" id="salin" title="Salin seluruh percakapan + proses sebagai teks, untuk ditempel saat minta perbaikan">Salin percakapan</button>
+    <button class="tombol" id="unduh" title="Unduh semua data mentah (termasuk matriks) sebagai JSON">Unduh JSON</button>
+    <button class="tombol" id="baru" title="Hapus riwayat percakapan (memori tetap tersimpan)">Percakapan baru</button>
+  </div>
+</header>
+<main>
+  <section id="chat">
+    <div id="pesan"></div>
+    <div class="contoh" id="contoh"></div>
+    <details id="memori">
+      <summary>Memori (<span id="jumlahMemori">0</span> catatan) — disimpan manual, dipakai untuk menjawab, misalnya "siapa nama saya?"</summary>
+      <ul id="daftarMemori"></ul>
+      <form id="formMemori" autocomplete="off">
+        <input id="teksMemori" placeholder="mis. nama saya Irun / rapat tim setiap Senin jam 9">
+        <button>Simpan</button>
+        <button type="button" class="tombol" id="hapusMemori">Hapus semua</button>
+      </form>
+    </details>
+    <form id="form" class="kirim" autocomplete="off">
+      <input id="masukan" placeholder="Ketik pesan… (mis. halo, berapa hari cuti tahunan?, apa itu virus?)" autofocus>
+      <button>Kirim</button>
+    </form>
+  </section>
+  <section id="proses">
+    <h2>Cara kerja</h2>
+    <div class="sub">Klik jawaban bot untuk melihat langkah-langkahnya, lengkap dengan angka perhitungan yang sungguhan.</div>
+    <div id="detail" class="kosong">Belum ada pesan.</div>
+  </section>
+</main>
+<div id="toast"></div>
+<div id="salinManual">
+  <div>Salin teks di bawah ini (Ctrl+A lalu Ctrl+C):</div>
+  <textarea id="teksSalin" readonly></textarea>
+  <button class="tombol" id="tutupSalin">Tutup</button>
+</div>
+<script>
+const $ = (s) => document.querySelector(s);
+const el = (tag, cls, teks) => { const e = document.createElement(tag); if (cls) e.className = cls; if (teks !== undefined) e.textContent = teks; return e; };
+const f2 = (x, d = 2) => Number(x).toFixed(d);
+const awam = (teks) => el("div", "awam", teks);
+const rumus = (teks) => el("div", "rumus", teks);
+const h4 = (teks) => el("h4", "", teks);
+
+// Riwayat percakapan & topik terakhir disimpan di halaman, lalu dikirim di setiap pesan
+let topik = null;
+let riwayat = [];
+let log = []; // semua { pesan, respons } untuk ekspor
+const CONTOH = ["halo", "nama saya Irun", "berapa hasil dari 8 ÷ 2(2 + 2)?", "angka berikutnya dari 2, 6, 12, 20, 30, ...?", "Jika 5 mesin menghasilkan 5 produk dalam 5 menit, berapa waktu yang dibutuhkan 100 mesin untuk menghasilkan 100 produk?", "berapa lama cutinya?", "berapa hari cuti tahunan pegawai?", "kalau cuti besar?", "lebih detail", "siapa Hö'elün?", "kapan dia lahir?", "apa itu virus?", "siapa nama saya?", "terima kasih"];
+const NAMA_JALUR = { aturan: "Dokumen aturan", wiki: "Wikipedia", obrolan: "GPT obrolan", memori: "Memori", detail: "Detail sumber", maksud: "Pemahaman maksud", penalaran: "Agent penalaran", internet: "Internet", klarifikasi: "Tanya balik", "tidak-ditemukan": "Tidak ditemukan" };
+
+function toast(teks) { const t = $("#toast"); t.textContent = teks; t.classList.add("tampil"); setTimeout(() => t.classList.remove("tampil"), 2200); }
+
+function muatInfo() {
+  fetch("/api/info").then((r) => r.json()).then((i) => {
+    $("#info").textContent = `aturan: ${i.aturan.pasal} pasal / ${i.aturan.dokumen} dokumen · Wikipedia: ${i.wiki ? i.wiki.artikel + " artikel" : "—"} · GPT: ${i.gpt ? `${i.gpt.nama} (${i.gpt.parameter.toLocaleString("id-ID")} parameter)` : "—"} · memori: ${i.memori}`;
+  });
+}
+muatInfo();
+$("#suhu").oninput = () => ($("#suhuNilai").textContent = $("#suhu").value);
+for (const c of CONTOH) { const b = el("button", "", c); b.type = "button"; b.onclick = () => kirim(c); $("#contoh").append(b); }
+$("#form").onsubmit = (e) => { e.preventDefault(); const t = $("#masukan").value.trim(); if (t) kirim(t); };
+$("#baru").onclick = () => {
+  riwayat = []; topik = null; log = []; $("#pesan").innerHTML = "";
+  $("#detail").className = "kosong"; $("#detail").textContent = "Percakapan baru dimulai. Memori tetap tersimpan.";
+};
+
+// ---------- ekspor ----------
+$("#salin").onclick = async () => {
+  if (!log.length) return toast("Belum ada percakapan.");
+  const entri = log.map(({ pesan, r }) => ({
+    pesan, jalur: r.jalur, teks: r.teks, keyakinan: r.keyakinan, label: r.label, totalMs: r.totalMs,
+    proses: r.proses.map((p) => ({ tahap: p.tahap, hasil: p.hasil })),
+    sumber: (r.sumber || []).map((s) => ({ nomor: s.nomor, label: s.label })),
+    tokenGPT: r.gpt ? r.gpt.langkah.map((l) => ({ token: l.token, p: l.p })) : undefined,
+  }));
+  const teks = await fetch("/api/export", { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ entri, mode: $("#mode").value, suhu: Number($("#suhu").value) }) }).then((x) => x.text());
+  try { await navigator.clipboard.writeText(teks); toast("Percakapan tersalin. Silakan tempel untuk minta perbaikan."); }
+  catch { $("#teksSalin").value = teks; $("#salinManual").style.display = "flex"; $("#teksSalin").select(); }
+};
+$("#tutupSalin").onclick = () => ($("#salinManual").style.display = "none");
+$("#unduh").onclick = () => {
+  if (!log.length) return toast("Belum ada percakapan.");
+  const blob = new Blob([JSON.stringify(log, null, 2)], { type: "application/json" });
+  const a = el("a"); a.href = URL.createObjectURL(blob); a.download = `chat-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`; a.click();
+};
+
+// ---------- memori (disimpan manual oleh pengguna) ----------
+async function muatMemori() {
+  const daftar = await fetch("/api/memori").then((r) => r.json());
+  $("#jumlahMemori").textContent = daftar.length;
+  const ul = $("#daftarMemori"); ul.innerHTML = "";
+  if (!daftar.length) ul.append(el("li", "", "Belum ada catatan."));
+  for (const c of daftar) {
+    const li = el("li");
+    const hapus = el("button", "", "hapus"); hapus.title = "Hapus catatan ini";
+    hapus.onclick = async () => { await fetch("/api/memori/" + c.id, { method: "DELETE" }); muatMemori(); muatInfo(); };
+    li.append(el("span", "id", "#" + c.id), el("span", "", c.teks), hapus);
+    ul.append(li);
+  }
+}
+async function simpanMemori(teks) {
+  await fetch("/api/memori", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ teks }) });
+  $("#memori").open = true; muatMemori(); muatInfo(); toast("Tersimpan di memori.");
+}
+$("#formMemori").onsubmit = (e) => { e.preventDefault(); const t = $("#teksMemori").value.trim(); if (t) { $("#teksMemori").value = ""; simpanMemori(t); } };
+$("#hapusMemori").onclick = async () => { if (confirm("Hapus semua catatan memori?")) { await fetch("/api/memori", { method: "DELETE" }); muatMemori(); muatInfo(); } };
+muatMemori();
+
+// ---------- kirim pesan ----------
+async function kirim(teks) {
+  $("#masukan").value = "";
+  const u = el("div", "msg user", teks);
+  const s = el("span", "simpan", "simpan ke memori"); s.title = "Simpan pesan ini sebagai catatan memori";
+  s.onclick = () => { simpanMemori(teks); s.textContent = "tersimpan ✓"; };
+  u.append(s); tambah(u);
+  const tunggu = el("div", "msg bot", "…"); tambah(tunggu);
+  try {
+    const r = await fetch("/api/chat", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ pesan: teks, riwayat: riwayat.slice(-10), topik, mode: $("#mode").value, suhu: Number($("#suhu").value) }) }).then((x) => x.json());
+    if (r.error) throw new Error(r.error);
+    topik = r.topik;
+    riwayat.push({ user: teks, bot: r.teks, jalur: r.jalur });
+    log.push({ pesan: teks, r });
+    tunggu.replaceWith(pesanBot(teks, r));
+  } catch (e) { tunggu.textContent = "Terjadi kesalahan: " + e.message; }
+}
+function tambah(node) { $("#pesan").append(node); $("#pesan").scrollTop = $("#pesan").scrollHeight; }
+
+function pesanBot(pertanyaan, r) {
+  const m = el("div", "msg bot");
+  const meta = el("div", "meta");
+  meta.append(el("span", "badge b-" + r.jalur, NAMA_JALUR[r.jalur] ?? r.jalur));
+  if (r.keyakinan) meta.append(el("span", "", "keyakinan " + r.keyakinan));
+  meta.append(el("span", "", `${r.totalMs.toFixed(0)} ms`));
+  m.append(meta);
+  const isi = el("div");
+  for (const bagian of r.teks.split(/(\[\d+\])/)) {
+    const k = bagian.match(/^\[(\d+)\]$/);
+    if (k) { const a = el("span", "ref", bagian); a.onclick = (e) => { e.stopPropagation(); bukaSumber(m, Number(k[1])); }; isi.append(a); }
+    else isi.append(document.createTextNode(bagian));
+  }
+  m.append(isi);
+  if (r.label) m.append(el("div", "label", r.label));
+  if (r.sumber?.length) {
+    const s = el("div", "sumber");
+    for (const x of r.sumber) {
+      const d = el("details"); d.dataset.nomor = x.nomor;
+      d.append(el("summary", "", `[${x.nomor}] ${x.label} — lihat teks lengkap`), el("pre", "", x.teks));
+      s.append(d);
+    }
+    m.append(s);
+  }
+  m.onclick = () => tampilProses(m, pertanyaan, r);
+  setTimeout(() => tampilProses(m, pertanyaan, r), 0);
+  return m;
+}
+function bukaSumber(m, n) { const d = m.querySelector(`details[data-nomor="${n}"]`); if (d) { d.open = true; d.scrollIntoView({ block: "nearest" }); } }
+
+// ---------- panel cara kerja ----------
+function tampilProses(msg, pertanyaan, r) {
+  document.querySelectorAll(".msg.bot.aktif").forEach((x) => x.classList.remove("aktif"));
+  msg.classList.add("aktif");
+  const d = $("#detail"); d.className = ""; d.innerHTML = "";
+  d.append(el("div", "sub", `Pesan: “${pertanyaan}”`));
+
+  const tahap = r.proses.map((p) => p.tahap);
+  const alur = el("div", "alur");
+  const node = [
+    ["Pahami maksud", tahap.includes("Pemahaman maksud") || tahap.includes("Riwayat & memori")],
+    ["Agent penalaran", tahap.includes("Agent penalaran")],
+    ["Sapaan?", tahap.includes("Cek sapaan")],
+    ["Dokumen aturan", tahap.some((t) => t.startsWith("Cari di dokumen"))],
+    ["Wikipedia", tahap.some((t) => t.startsWith("Cari di Wikipedia"))],
+    ["Memori", tahap.includes("Cari di memori pengguna")],
+    ["GPT obrolan", r.jalur === "obrolan"],
+  ];
+  if (tahap.includes("Agent multi-mode")) node.unshift(["Agent: semua mode", true]);
+  if (tahap.includes("Cari di internet") || r.jalur === "internet") node.push(["Internet", true]);
+  if (r.jalur === "detail") node.unshift(["Detail sumber", true]);
+  const dipilih = { aturan: "Dokumen aturan", wiki: "Wikipedia", obrolan: "GPT obrolan", memori: "Memori", detail: "Detail sumber", maksud: "Pahami maksud", penalaran: "Agent penalaran", internet: "Internet", klarifikasi: "Dokumen aturan" }[r.jalur];
+  node.forEach(([n, lewat], i) => { if (i) alur.append(el("span", "p", "→")); alur.append(el("span", "n" + (n === dipilih ? " pilih" : lewat ? " lewat" : ""), n)); });
+  alur.append(el("span", "p", "→"), el("span", "n pilih", r.jalur === "tidak-ditemukan" ? "Jawab: tidak ditemukan" : "Jawaban"));
+  d.append(alur);
+  d.append(awam("Pesan Anda dicoba dijawab berurutan: sapaan dijawab model GPT; pertanyaan dicari dulu di dokumen aturan, lalu Wikipedia, lalu memori Anda. Kotak yang hitam adalah jalur yang akhirnya dipakai. Jika tidak ada sumber yang cukup yakin, bot menjawab jujur bahwa ia tidak tahu, bukan mengarang."));
+
+  for (const p of r.proses) {
+    const l = el("div", "langkah");
+    const j = el("div"); j.append(el("span", "judul", p.tahap)); if (p.ms >= 0.5) j.append(el("span", "waktu", f2(p.ms, 1) + " ms"));
+    l.append(j, el("div", "hasil", p.hasil));
+    if (p.tahap === "Normalisasi bahasa santai") l.append(blokSlang(p.data));
+    if (p.tahap === "Pemahaman maksud") l.append(awam("Beberapa maksud penting dikenali dengan pola kalimat yang pasti, bukan ditebak GPT: perkenalan (“namaku Irun”, “aku Sari”) dan pertanyaan tentang diri Anda (“siapa aku?”, “tau aku?”, “kenal saya?”). Model GPT kecil masih sering salah pada kalimat seperti ini, jadi pola tetap lebih andal. Nama diambil dari memori; jika belum disimpan, dari perkenalan di percakapan ini."));
+    if (p.tahap === "Agent penalaran" && p.data) l.append(blokAgent(p.data));
+    if (p.tahap === "Agent multi-mode" && p.data) l.append(blokAgent(p.data, "Mode agent mencoba SEMUA mode (otomatis, penalaran, dokumen aturan, Wikipedia lokal, GPT) seperti mencoba beberapa alat. Setiap hasil diberi skor 0–1: jawaban pasti (pola maksud, hitungan) tinggi; jawaban pencarian = keyakinan × (0,2 + 0,8 × cakupan²), dengan cakupan = bagian kata pertanyaan yang ada di jawaban; balasan GPT tinggi untuk sapaan tetapi rendah untuk pertanyaan fakta. Jika skor terbaik belum mencapai 0,6 dan pesan berupa pertanyaan, agent mencari di internet (API Wikipedia) dengan beberapa strategi, berhenti begitu ada kalimat yang memuat ≥ 50% kata pertanyaan. Kalimat dikutip apa adanya beserta tautannya. Langkah terakhir membandingkan semua kandidat."));
+    if (p.tahap === "Cari di internet") l.append(awam("Halaman internet tidak ada di indeks kita, jadi kalimat-kalimatnya dinilai seketika dengan BM25 mini: kata pertanyaan yang jarang muncul di kalimat-kalimat itu bernilai lebih tinggi (IDF). Nama diri di pertanyaan (mis. “Soekarno”) wajib ada di kalimat, dan artikel yang judulnya cocok dengan subjek diutamakan."));
+    if (p.tahap === "Pemeriksa relevansi") l.append(awam("Sebelum ditampilkan, jawaban diperiksa: apakah benar-benar menjawab pertanyaan? Misalnya pertanyaan “berapa” harus dijawab dengan angka, “apa itu X” harus dijawab dengan kalimat “X adalah …”, dan kalimat jawaban harus memuat sebagian besar kata yang ditanya. Jawaban yang gagal ditolak, lalu jalur berikutnya dicoba. Jika pertanyaan cocok dengan beberapa aturan berbeda, bot bertanya balik."));
+    if (p.tahap === "Kenali niat obrolan") l.append(awam("Pesan dibandingkan dengan contoh-contoh obrolan (salam, terima kasih, curhat, dst.) dengan menghitung kata yang sama. Niat yang paling mirip menjadi patokan untuk memeriksa balasan GPT."));
+    if (p.tahap === "Tokenisasi pesan") l.append(blokToken(p.data));
+    if (p.tahap === "Riwayat & memori") l.append(blokRiwayat(p.data));
+    if (p.tahap === "Tulis ulang pertanyaan lanjutan") l.append(awam("Pertanyaan pendek seperti “kapan dia lahir?” tidak menyebut siapa “dia”. Bot mengambil subjek dari jawaban sebelumnya, lalu memakainya untuk mencari artikel yang tepat."));
+    if (p.tahap.startsWith("Cari di dokumen") || p.tahap.startsWith("Cari di Wikipedia")) l.append(blokCari(p.data));
+    if (p.tahap === "Cari di memori pengguna") l.append(awam("Catatan memori dibandingkan dengan pertanyaan Anda kata per kata. Catatan dipakai jika minimal 60% kata topik pertanyaan ada di catatan itu. Kata “saya/aku” di catatan diubah menjadi “Anda” saat dijawab."));
+    if (p.tahap === "Susun jawaban") l.append(blokSusun(p.data));
+    if (p.tahap.startsWith("GPT") && p.data?.percobaan) l.append(blokPercobaan(p.data));
+    if (p.tahap.startsWith("GPT") && r.gpt) l.append(blokGPT(r.gpt));
+    d.append(l);
+  }
+}
+
+function blokAgent(x, penjelasan) {
+  const w = el("div");
+  if (penjelasan) w.append(awam(penjelasan)); else w.append(awam("Agent bekerja seperti orang memecahkan soal: (1) PIKIR — kenali jenis soal dan pilih alat; (2) AKSI — jalankan alat (kalkulator, kalender, pola barisan, persamaan, laju kerja, silogisme, atau bank teka-teki); (3) HASIL — catat jawaban dan langkah hitungnya; (4) CEK — masukkan jawaban kembali ke soal atau hitung ulang dengan cara lain. Jika cek gagal, agent mencoba alat berikutnya. GPT kita terlalu kecil untuk menjadi “otak” agent, jadi pemilihan langkahnya memakai aturan."));
+  x.langkah.forEach((l, i) => {
+    const kotak = el("div", "agent" + (/DITOLAK|gagal|✗/.test(l.cek) ? " ditolak" : ""));
+    const baris = (lbl, isi) => { const d = el("div"); d.append(el("b", "", lbl), document.createTextNode(isi)); return d; };
+    kotak.append(el("div", "hasil", `Langkah ${i + 1}`), baris("Pikir", l.pikir), baris("Aksi", l.aksi), baris("Hasil", l.hasil), baris("Cek", l.cek));
+    if (l.rincian?.length) kotak.append(rumus(l.rincian.join("\n")));
+    w.append(kotak);
+  });
+  return w;
+}
+
+function blokPercobaan(x) {
+  const w = el("div");
+  w.append(awam(`Best-of-N: GPT diminta membuat beberapa balasan dengan suhu berbeda. Setiap balasan dikenali niatnya, lalu dibandingkan dengan niat pesan Anda${x.target ? ` (“${x.target}”)` : ""}. Balasan pertama yang cocok yang dipakai; jika semua meleset, dipakai balasan contoh dari niat itu.`));
+  const t = el("table"); t.innerHTML = "<tr><th>#</th><th>Suhu</th><th>Balasan GPT</th><th>Niat balasan</th><th>Hasil</th></tr>";
+  x.percobaan.forEach((p, i) => { const tr = el("tr"); tr.append(el("td", "num", String(i + 1)), el("td", "num", f2(p.suhu, 1)), el("td", "", p.teks), el("td", "", `${p.niat ?? "-"} (${f2(p.skor)})`), el("td", "", p.diterima ? "diterima ✓" : "ditolak ✗")); t.append(tr); });
+  w.append(t);
+  return w;
+}
+
+function blokSlang(x) {
+  const w = el("div");
+  w.append(awam("Kata santai dan singkatan diubah ke bentuk baku dulu, karena dokumen dan data latih ditulis baku. Kamusnya ada di data/slang.txt dan boleh Anda tambah sendiri."));
+  const c = el("div", "chips"); x.ganti.forEach(([a, b]) => c.append(el("span", "chip", `${a} → ${b}`))); w.append(c);
+  return w;
+}
+
+function blokToken(x) {
+  const w = el("div");
+  w.append(awam("Komputer tidak memahami kalimat utuh. Kalimat dipecah menjadi kata. Kata yang terlalu umum (yang, apa, di, saya…) dibuang karena tidak membantu mencari. Setiap kata juga dicari dalam bentuk dasarnya (ditandai ~), jadi “melahirkan” ikut cocok dengan “lahir”."));
+  w.append(el("div", "hasil", "Kata asli:"));
+  const c1 = el("div", "chips"); x.token.forEach((t) => c1.append(el("span", "chip", t))); w.append(c1);
+  w.append(el("div", "hasil", "Kata kunci yang dicari:"));
+  const c2 = el("div", "chips"); x.term.forEach((t) => c2.append(el("span", "chip" + (t.startsWith("~") ? " dasar" : ""), t))); w.append(c2);
+  return w;
+}
+
+function blokRiwayat(x) {
+  const w = el("div");
+  w.append(awam("Bot mengingat percakapan yang sedang berjalan. Topik terakhir dipakai untuk memahami pertanyaan lanjutan seperti “kapan dia lahir?”, “kalau cuti besar?”, atau “lebih detail”."));
+  if (x.topik) w.append(el("div", "hasil", `Topik terakhir: “${x.topik.subjek}” dari ${x.topik.jalur === "wiki" ? "Wikipedia" : "dokumen aturan"}.`));
+  if (x.riwayat?.length) {
+    const t = el("table"); t.innerHTML = "<tr><th>Anda</th><th>Bot</th><th>Jalur</th></tr>";
+    x.riwayat.forEach((g) => { const tr = el("tr"); tr.append(el("td", "", g.user), el("td", "", g.bot), el("td", "", NAMA_JALUR[g.jalur] ?? g.jalur)); t.append(tr); });
+    w.append(t);
+  }
+  return w;
+}
+
+function blokCari(x) {
+  const w = el("div");
+  w.append(awam("Mesin pencari BM25 memberi nilai pada setiap potongan dokumen. Nilainya besar jika potongan memuat kata yang Anda tanyakan, terutama kata yang JARANG (lebih khas), dan jika kata itu muncul beberapa kali. Potongan yang sangat panjang sedikit dikurangi nilainya, karena wajar memuat banyak kata."));
+  if (x.terms?.length) {
+    w.append(el("div", "hasil", "Kata kunci + bobot (1 = kata asli; kurang dari 1 = sinonim, singkatan, atau konteks percakapan):"));
+    const c = el("div", "chips");
+    x.terms.forEach(([t, b]) => c.append(el("span", "chip" + (t.startsWith("~") ? " dasar" : ""), `${t} ×${f2(b)}`)));
+    w.append(c);
+  }
+  if (x.kandidat?.length) {
+    w.append(h4("Kandidat teratas"));
+    const t = el("table");
+    t.innerHTML = "<tr><th>#</th><th>Potongan</th><th>Skor BM25</th><th>Cakupan</th><th>Kekuatan</th></tr>";
+    x.kandidat.forEach((k, i) => {
+      const tr = el("tr"); const td = el("td"); td.append(el("div", "", k.sumber), el("div", "hasil", k.cuplikan + "…"));
+      tr.append(el("td", "num", String(i + 1)), td, el("td", "num", f2(k.bm25)), sel(k.cakupan, `${Math.round(k.cakupan * 100)}%`), el("td", "num", f2(k.kekuatan)));
+      t.append(tr);
+    });
+    w.append(t);
+  } else w.append(el("div", "hasil", "Tidak ada potongan yang memuat kata pertanyaan."));
+  if (x.rincian) w.append(blokRincianBM25(x.rincian));
+  if (x.cakupan) w.append(blokCakupan(x.cakupan));
+  (x.catatan ?? []).forEach((c) => w.append(el("div", "hasil", "• " + c)));
+  return w;
+}
+
+function blokRincianBM25(r) {
+  const w = el("div");
+  w.append(h4("Hitungan skor kandidat #1, langkah demi langkah"));
+  w.append(awam(`Ada ${r.N.toLocaleString("id-ID")} potongan dokumen. Rata-rata panjangnya ${f2(r.avgdl, 1)} kata kunci; potongan ini ${r.panjang} kata kunci. Untuk setiap kata yang ditanya, dihitung seberapa langka kata itu (IDF) dan seberapa sering ia muncul di potongan ini, lalu semuanya dijumlahkan.`));
+  w.append(rumus(
+`1) Faktor panjang potongan:
+   norm = k1 × (1 − b + b × panjang/rata-rata)
+        = ${r.k1} × (1 − ${r.b} + ${r.b} × ${f2(r.panjangEfektif, 1)}/${f2(r.avgdl, 1)}) = ${f2(r.norm, 3)}
+2) Kelangkaan kata:   IDF = ln(1 + (N − n + 0.5)/(n + 0.5))      n = jumlah potongan yang memuat kata itu
+3) Sumbangan kata:    bobot × IDF × f × (k1+1) / (f + norm)       f = berapa kali kata muncul di potongan ini`));
+  const t = el("table");
+  t.innerHTML = "<tr><th>Kata</th><th>Bobot</th><th>n (dari N)</th><th>IDF</th><th>f</th><th>Sumbangan = bobot × IDF × f × 2.5 / (f + norm)</th></tr>";
+  for (const b of r.baris) {
+    const tr = el("tr");
+    const idfTeks = `ln(1 + (${r.N} − ${b.nq} + 0.5)/(${b.nq} + 0.5)) = ${f2(b.idf, 3)}`;
+    const kontrib = b.f ? `${f2(b.bobot)} × ${f2(b.idf, 3)} × ${b.f} × 2.5 / (${b.f} + ${f2(r.norm, 3)}) = ${f2(b.kontribusi, 3)}` : "tidak muncul → 0";
+    tr.append(el("td", "mono", b.term), el("td", "num", f2(b.bobot)), el("td", "num", `${b.nq}`), el("td", "mono", idfTeks), el("td", "num", String(b.f)), el("td", "mono", kontrib));
+    t.append(tr);
+  }
+  w.append(t);
+  w.append(rumus(`Jumlah sumbangan = ${f2(r.total, 3)}\nSkor akhir = ${f2(r.total, 3)} × ${f2(r.faktor, 3)} (penyesuaian: bagian pembukaan/penjelasan dikurangi, judul yang cocok ditambah) = ${f2(r.skorAkhir, 3)}`));
+  return w;
+}
+
+function blokCakupan(c) {
+  const w = el("div");
+  w.append(h4("Seberapa yakin? (cakupan & kekuatan)"));
+  w.append(awam("Skor tinggi saja belum cukup. Bot juga memeriksa: apakah SEMUA kata penting dari pertanyaan ada di potongan itu (cakupan), dan apakah kata yang cocok cukup khas, bukan kata umum (kekuatan). Ini mencegah bot menjawab ngawur."));
+  const chips = el("div", "chips");
+  c.kelompok.forEach((g) => chips.append(el("span", "chip " + (g.cocok ? "ya" : "tidak"), `${g.kata} (bobot ${f2(g.bobot)})${g.cocok ? " ✓" : " ✗"}`)));
+  w.append(chips);
+  const total = c.kelompok.reduce((s, g) => s + g.bobot, 0), cocok = c.kelompok.filter((g) => g.cocok).reduce((s, g) => s + g.bobot, 0);
+  w.append(rumus(
+`cakupan  = bobot kata yang cocok / bobot semua kata = ${f2(cocok)} / ${f2(total)} = ${Math.round(c.cakupan * 100)}%
+kekuatan = bobot kata yang cocok / ln(1 + N)          = ${f2(cocok)} / ${f2(c.lnN)} = ${f2(c.kekuatan)}
+Keyakinan TINGGI jika cakupan ≥ 60%, SEDANG jika ≥ 35%, dan kekuatan ≥ 0.9 (atau satu kata langka cocok penuh).`));
+  return w;
+}
+
+function sel(nilai, teks) {
+  const td = el("td", "num"); const b = el("div", "bar"); const i = el("i"); i.style.width = Math.min(100, nilai * 100) + "%"; b.append(i);
+  td.append(el("div", "", teks), b); return td;
+}
+
+function blokSusun(x) {
+  const w = el("div");
+  w.append(awam("Dari potongan teratas, setiap kalimat dinilai lagi. Kalimat yang memuat lebih banyak kata pertanyaan, dan yang bentuknya cocok dengan jenis pertanyaan (mis. “adalah …” untuk definisi, angka untuk “berapa”), dipilih menjadi jawaban utama. Isi jawaban selalu kutipan asli, tidak dikarang."));
+  (x.catatan ?? []).forEach((c) => w.append(el("div", "hasil", "• " + c)));
+  if (x.kalimat?.length) {
+    w.append(rumus("skor kalimat = bm25(kalimat) × (0.2 + cakupan)² ÷ (1 + 0.25 × peringkat potongan), ×2 jika cocok pola jenis pertanyaan"));
+    const t = el("table"); t.innerHTML = "<tr><th>Kalimat kandidat</th><th>Skor</th><th>Cakupan</th></tr>";
+    x.kalimat.forEach((k) => { const tr = el("tr"); const td = el("td"); td.append(el("div", "", k.teks), el("div", "hasil", k.sumber)); tr.append(td, el("td", "num", f2(k.skor)), sel(k.cakupan, `${Math.round(k.cakupan * 100)}%`)); t.append(tr); });
+    w.append(t);
+  }
+  return w;
+}
+
+// ---------- GPT ----------
+function warnaAngka(x, maks) {
+  const a = Math.min(1, Math.abs(x) / (maks || 1));
+  return x >= 0 ? `rgba(47,95,167,${0.08 + 0.55 * a})` : `rgba(165,86,43,${0.08 + 0.55 * a})`;
+}
+function vektor(arr) {
+  const v = el("span", "vek"); const maks = Math.max(...arr.map(Math.abs), 1e-9);
+  arr.forEach((x) => { const s = el("span", "", f2(x)); s.style.background = warnaAngka(x, maks); v.append(s); });
+  return v;
+}
+
+function blokGPT(g) {
+  const w = el("div");
+  w.append(awam("GPT tidak mencari di dokumen. Ia MENEBAK kata berikutnya satu per satu, berdasarkan pola yang ia pelajari dari ribuan contoh. Di bawah ini setiap tahap di dalam model ditunjukkan dengan angka sungguhan."));
+  w.append(rumus("Alur: teks → token → angka (embedding + posisi) → 4 lapisan × [attention → tambah & normalisasi → feed forward → tambah & normalisasi] → skor untuk setiap kata → peluang → pilih satu kata → ulangi"));
+
+  w.append(h4("1. Teks → token"));
+  w.append(awam("Kalimat dipotong menjadi potongan kata (token) dengan BPE. Token gelap adalah penanda khusus: <|user|> = awal pesan Anda, <|bot|> = giliran bot menjawab, <|end|> = akhir giliran."));
+  const c = el("div", "chips"); g.prompt.forEach((t) => c.append(el("span", "chip" + (/^<\|.*\|>$/.test(t) ? " khusus" : ""), t))); w.append(c);
+
+  const s = g.simulasi;
+  if (s) {
+    w.append(h4(`2. Token → angka (vektor ${s.D} angka)`));
+    w.append(awam(`Setiap token diganti dengan daftar ${s.D} angka yang dipelajari saat training, semacam “sidik jari makna”. Token yang maknanya mirip punya angka yang mirip. Lalu ditambahkan gelombang sinus/kosinus (positional encoding) supaya model tahu urutan kata. Ditampilkan 8 angka pertama; biru = positif, cokelat = negatif.`));
+    const t = el("table"); t.innerHTML = "<tr><th>Token</th><th>Embedding (makna)</th><th>+ Posisi</th><th>= Masukan lapisan 1</th></tr>";
+    s.vektor.slice(-6).forEach((v) => { const tr = el("tr"); const a = el("td"); a.append(vektor(v.embedding)); const b = el("td"); b.append(vektor(v.posisi)); const cc = el("td"); cc.append(vektor(v.masukan)); tr.append(el("td", "mono", JSON.stringify(v.token)), a, b, cc); t.append(tr); });
+    w.append(t);
+    w.append(el("div", "hasil", `(6 token terakhir dari ${s.jendela.length} yang ditampilkan.)`));
+
+    const at = s.attentionSatu;
+    w.append(h4(`3. Attention: simulasi untuk token ${JSON.stringify(at.dari)} (lapisan ${at.lapisan}, head ${at.head})`));
+    w.append(awam(`Ini inti GPT. Setiap token “bertanya” ke token-token sebelumnya: mana yang penting untuk menebak kata berikutnya? Token ${JSON.stringify(at.dari)} membuat vektor Query (q = pertanyaannya). Setiap token sebelumnya punya vektor Key (k = labelnya). Kecocokan dihitung dengan perkalian titik q·k: kalikan angka yang sejajar lalu jumlahkan. Hasilnya dibagi √${s.dh} agar tidak terlalu besar, lalu softmax mengubahnya menjadi persentase yang jumlahnya 100%. Token masa depan tidak boleh dilihat (causal).`));
+    const q = el("div", "hasil"); q.append(document.createTextNode("q = "), vektor(at.q), document.createTextNode(` … (${s.dh} angka, ditampilkan 8)`)); w.append(q);
+    const t2 = el("table"); t2.innerHTML = `<tr><th>Token sebelumnya</th><th>k (8 dari ${s.dh} angka)</th><th>q·k</th><th>÷ √${s.dh}</th><th>Perhatian (softmax)</th></tr>`;
+    at.baris.forEach((b) => { const tr = el("tr"); const kk = el("td"); kk.append(vektor(b.k)); tr.append(el("td", "mono", JSON.stringify(b.token)), kk, el("td", "num", f2(b.qk, 3)), el("td", "num", f2(b.skala, 3)), sel(b.p, (b.p * 100).toFixed(1) + "%")); t2.append(tr); });
+    w.append(t2);
+    w.append(el("div", "hasil", "Hanya 6 token terdekat yang ditampilkan; sisa persentasenya untuk token yang lebih awal."));
+    w.append(rumus(`perhatian_j = e^(skor_j) / Σ e^(skor semua token sebelumnya)\nHasil attention = Σ perhatian_j × V_j  (campuran informasi dari token-token yang diperhatikan)`));
+
+    w.append(h4("4. Peta attention (semua token sekaligus)"));
+    w.append(awam("Satu baris = satu token yang sedang “melihat”. Kolom = token yang dilihat. Makin gelap kotaknya, makin besar perhatiannya. Bagian kanan-atas selalu kosong karena token tidak boleh melihat masa depan. Model punya 4 lapisan × 4 head; setiap head belajar memperhatikan hal yang berbeda. Hanya 16 token terakhir yang ditampilkan, jadi jumlah satu baris bisa kurang dari 100% (sisanya untuk token yang lebih awal). Pilih lapisan/head:"));
+    const wadah = el("div"); const pilih = el("div", "pilih-lh"); const peta = el("div", "peta");
+    const gambar = (l, h) => {
+      peta.innerHTML = ""; pilih.querySelectorAll("button").forEach((b) => b.classList.toggle("aktif", b.dataset.k === `${l}-${h}`));
+      const m = s.peta[l][h]; const tb = el("table"); const head = el("tr"); head.append(el("th"));
+      s.jendela.forEach((t) => head.append(el("th", "kol", t))); tb.append(head);
+      m.forEach((row, i) => { const tr = el("tr"); tr.append(el("th", "", s.jendela[i])); row.forEach((x, j) => { const td = el("td", "", j <= i && x >= 0.1 ? Math.round(x * 100) : ""); td.style.background = j > i ? "#f4f3ee" : `rgba(29,29,27,${Math.min(0.9, x)})`; td.style.color = x > 0.45 ? "#fff" : "#333"; td.title = `${JSON.stringify(s.jendela[i])} → ${JSON.stringify(s.jendela[j])}: ${(x * 100).toFixed(1)}%`; tr.append(td); }); tb.append(tr); });
+      peta.append(tb);
+    };
+    s.peta.forEach((lap, l) => lap.forEach((_, h) => { const b = el("button", "", `L${l + 1} H${h + 1}`); b.dataset.k = `${l}-${h}`; b.onclick = () => gambar(l, h); pilih.append(b); }));
+    wadah.append(pilih, peta); w.append(wadah); gambar(s.peta.length - 1, 0);
+
+    const p = s.peluang;
+    w.append(h4("5. Skor → peluang kata pertama jawaban"));
+    w.append(awam(`Setelah 4 lapisan, model memberi skor (logit) untuk SEMUA token di kosakatanya. Skor dibagi suhu (${p.suhu}): suhu kecil membuat pilihan lebih yakin, suhu besar lebih acak. Lalu e^(…) membuat semua angka positif, dan dibagi jumlah semuanya agar menjadi peluang. Berikut 6 token dengan peluang terbesar:`));
+    const t3 = el("table"); t3.innerHTML = `<tr><th>Token</th><th>Skor z</th><th>z ÷ suhu</th><th>e^(z/suhu − maks)</th><th>Peluang = e ÷ ${f2(p.jumlahExp, 3)}</th></tr>`;
+    p.baris.forEach((b) => { const tr = el("tr"); tr.append(el("td", "mono", JSON.stringify(b.token)), el("td", "num", f2(b.z, 3)), el("td", "num", f2(b.zSuhu, 3)), el("td", "num", f2(b.exp, 4)), sel(b.p, (b.p * 100).toFixed(1) + "%")); t3.append(tr); });
+    w.append(t3);
+    w.append(el("div", "hasil", `Token lain bersama-sama: ${(p.sisaP * 100).toFixed(1)}%. Sebelum memilih, token yang baru saja muncul dikurangi peluangnya (penalti ulang ${g.penaltiUlang}), lalu hanya ${g.topK} token teratas dengan total peluang ${g.topP * 100}% yang boleh dipilih (top-k, top-p).`));
+  }
+
+  w.append(h4("6. Kata demi kata"));
+  w.append(awam("Langkah 2–5 diulang untuk setiap token: token terpilih ditambahkan ke belakang, lalu model menebak lagi, sampai ia memilih <|end|>. Angka di bawah token = peluangnya saat dipilih. Arahkan kursor untuk melihat 5 kandidat teratas."));
+  const box = el("div");
+  g.langkah.forEach((sx) => { const t = el("span", "token-gen"); t.title = sx.kandidat.map((k) => `${JSON.stringify(k.token)}  ${(k.p * 100).toFixed(1)}%`).join("\n"); t.append(el("b", "", sx.token), el("small", "", (sx.p * 100).toFixed(0) + "%")); box.append(t); });
+  w.append(box);
+  const ragu = g.langkah.map((sx, i) => ({ ...sx, i })).sort((a, b) => a.p - b.p).slice(0, 3);
+  if (ragu.length) {
+    w.append(el("div", "hasil", "Langkah paling ragu (peluang terpilih terkecil) dan pilihan lainnya:"));
+    const t = el("table"); t.innerHTML = "<tr><th>Langkah</th><th>Kandidat (peluang)</th></tr>";
+    ragu.forEach((sx) => { const tr = el("tr"); tr.append(el("td", "num", String(sx.i + 1))); const td = el("td"); const cc = el("div", "chips"); sx.kandidat.forEach((k) => cc.append(el("span", "chip" + (k.token === sx.token ? " khusus" : ""), `${k.token} ${(k.p * 100).toFixed(1)}%`))); td.append(cc); tr.append(td); t.append(tr); });
+    w.append(t);
+  }
+  return w;
+}
+</script>
+</body>
+</html>

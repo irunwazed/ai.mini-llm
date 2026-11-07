@@ -1,0 +1,7 @@
+node_modules/
+model/
+model-wiki/
+gpt-models/
+data/wiki-id*.txt
+data/memory.json
+exports/

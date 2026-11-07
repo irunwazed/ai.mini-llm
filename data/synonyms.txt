@@ -1,0 +1,85 @@
+# Kamus sinonim untuk perluasan pertanyaan (query expansion).
+# Format:  kata = padanan 1, padanan 2, ...
+# Berlaku satu arah: kata di kiri yang muncul di PERTANYAAN ikut dicari sebagai padanan di kanan.
+# Tambahkan sendiri sesuai istilah di dokumen Anda. Tidak perlu training ulang.
+
+mobil = kendaraan
+motor = kendaraan
+bensin = bahan bakar, bbm
+bbm = bahan bakar
+pakai = guna
+dipakai = digunakan
+memakai = menggunakan
+puasa = ramadan
+seminggu = minggu
+sebulan = bulan
+setahun = tahun
+gaji = penghasilan, gaji pokok
+upah = penghasilan
+pns = pegawai negeri sipil, pegawai, asn
+asn = aparatur sipil negara, pegawai
+karyawan = pegawai
+libur = cuti
+izin = cuti
+hamil = melahirkan
+lahiran = melahirkan
+telat = terlambat
+denda = sanksi
+hukuman = sanksi
+bawa = tangguhkan
+dibawa = ditangguhkan
+sisa = tidak digunakan
+akibat = sanksi, wajib mengembalikan
+hotel = penginapan
+menginap = penginapan
+batas = paling banyak, paling lama, paling lambat
+maksimal = paling banyak, paling lama
+minimal = paling sedikit, paling singkat
+
+# --- istilah sehari-hari untuk kepegawaian ---
+pegawai negeri = pns, pegawai negeri sipil, asn
+honorer = pegawai pemerintah dengan perjanjian kerja, pppk
+pppk = pegawai pemerintah dengan perjanjian kerja
+kantor = instansi
+atasan = pejabat yang berwenang, ppk
+bos = pejabat yang berwenang, atasan
+pensiun = pemberhentian, batas usia pensiun
+dipecat = pemberhentian, diberhentikan
+pecat = pemberhentian, diberhentikan
+berhenti = pemberhentian
+resign = pemberhentian atas permintaan sendiri
+mengundurkan = pemberhentian atas permintaan sendiri
+naik pangkat = kenaikan pangkat
+promosi = kenaikan pangkat, jabatan
+mutasi = pemindahan
+pindah = pemindahan, mutasi
+bolos = tidak masuk kerja
+absen = kehadiran, tidak masuk kerja
+lembur = jam kerja
+honor = honorarium, penghasilan
+tunjangan = tunjangan kinerja
+tukin = tunjangan kinerja
+nikah = menikah, perkawinan
+kawin = perkawinan
+meninggal = meninggal dunia, wafat
+melahirkan = cuti melahirkan
+cuti hamil = cuti melahirkan
+umroh = cuti alasan penting, ibadah
+haji = cuti besar, ibadah
+liburan = cuti tahunan
+# --- perjalanan dinas & pengadaan ---
+dinas luar = perjalanan dinas
+dinas keluar kota = perjalanan dinas luar kota
+uang saku = uang harian
+uang makan = uang harian
+ongkos = biaya, transportasi
+tiket = biaya transportasi
+beli = pengadaan
+membeli = pengadaan
+belanja = pengadaan
+proyek = pekerjaan, paket pengadaan
+kontraktor = penyedia
+vendor = penyedia
+rekanan = penyedia
+lelang = tender
+blacklist = daftar hitam

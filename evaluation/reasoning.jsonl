@@ -1,0 +1,42 @@
+{"kategori": "logika dasar", "soal": "Jika semua kucing adalah hewan, dan beberapa hewan bisa berenang, apakah semua kucing bisa berenang?", "harus_ada": ["tidak bisa disimpulkan"]}
+{"kategori": "logika dasar", "soal": "Ada 5 apel. Kamu mengambil 2 apel. Berapa apel yang kamu miliki?", "harus_ada": ["2 apel"]}
+{"kategori": "logika dasar", "soal": "Ayah Budi memiliki 5 anak: Nana, Nini, Nunu, Nene. Siapa anak kelima?", "harus_ada": ["Budi"]}
+{"kategori": "logika dasar", "soal": "Mana yang lebih berat: 1 kg besi atau 1 kg kapas?", "harus_ada": ["sama berat"]}
+{"kategori": "logika dasar", "soal": "Jika hari ini hari Rabu, 100 hari lagi hari apa?", "harus_ada": ["Jumat"]}
+{"kategori": "jebakan", "soal": "Sebelum Gunung Everest ditemukan, gunung apa yang paling tinggi di dunia?", "harus_ada": ["Everest"]}
+{"kategori": "jebakan", "soal": "Ada 10 ikan di akuarium. 2 ikan mati. Berapa ikan yang tersisa di akuarium?", "harus_ada": ["10 ikan"]}
+{"kategori": "jebakan", "soal": "Seorang dokter memberikan 3 pil dan menyuruh pasien meminum satu pil setiap 30 menit. Berapa lama sampai semua pil habis diminum?", "harus_ada": ["60 menit"]}
+{"kategori": "jebakan", "soal": "Kereta listrik bergerak ke utara. Angin bertiup ke selatan. Ke mana arah asap kereta?", "harus_ada": ["tidak mengeluarkan asap"]}
+{"kategori": "jebakan", "soal": "Jika kamu menyalip orang di posisi kedua dalam perlombaan, sekarang kamu berada di posisi berapa?", "harus_ada": ["posisi kedua"]}
+{"kategori": "matematika", "soal": "Jika 5 mesin menghasilkan 5 produk dalam 5 menit, berapa waktu yang dibutuhkan 100 mesin untuk menghasilkan 100 produk?", "harus_ada": ["5 menit"]}
+{"kategori": "matematika", "soal": "Sebuah tongkat dan bola berharga Rp11.000. Harga tongkat Rp10.000 lebih mahal daripada bola. Berapa harga bola?", "harus_ada": ["Rp500"]}
+{"kategori": "matematika", "soal": "Angka berikutnya dari pola 2, 6, 12, 20, 30, ...?", "harus_ada": ["42"]}
+{"kategori": "matematika", "soal": "Jika 3 pekerja menyelesaikan 3 pekerjaan dalam 3 hari, berapa hari yang dibutuhkan 6 pekerja untuk menyelesaikan 6 pekerjaan?", "harus_ada": ["3 hari"]}
+{"kategori": "matematika", "soal": "Berapa hasil dari 8 ÷ 2(2 + 2)?", "harus_ada": ["16"]}
+{"kategori": "logika lanjut", "soal": "Ada 3 sakelar di luar ruangan dan 1 lampu di ruangan tertutup. Kamu hanya boleh masuk ke ruangan satu kali. Bagaimana mengetahui sakelar mana yang menghidupkan lampu?", "harus_ada": ["hangat"]}
+{"kategori": "logika lanjut", "soal": "Seorang pria melihat foto seseorang dan berkata, \"Saya tidak punya saudara laki-laki atau perempuan, tetapi ayah orang di foto adalah anak ayah saya.\" Siapa orang di foto?", "harus_ada": ["anak"]}
+{"kategori": "logika lanjut", "soal": "Ada 8 bola identik, tetapi satu bola lebih berat. Bagaimana menemukan bola tersebut hanya dengan 2 kali penimbangan menggunakan timbangan neraca?", "harus_ada": ["3–3–2", "3 bola vs 3 bola"]}
+{"kategori": "logika lanjut", "soal": "Jika pernyataan \"Semua pernyataan berikut salah\" benar, apa yang terjadi?", "harus_ada": ["kontradiksi"]}
+{"kategori": "logika lanjut", "soal": "Ada dua pintu: satu menuju keselamatan dan satu menuju bahaya. Ada dua penjaga, satu selalu jujur dan satu selalu berbohong. Kamu hanya boleh bertanya satu kali kepada salah satu penjaga. Apa pertanyaannya?", "harus_ada": ["penjaga yang lain"]}
+{"kategori": "tes AI", "soal": "Jawab pertanyaan ini hanya dengan satu kata: apakah jawabanmu untuk pertanyaan ini adalah \"tidak\"?", "harus_ada": ["paradoks"]}
+{"kategori": "tes AI", "soal": "Jelaskan mengapa 0,999... sama dengan 1 tanpa menggunakan kalkulator.", "harus_ada": ["10x"]}
+{"kategori": "tes AI", "soal": "Jika saya mengatakan bahwa semua jawabanmu salah, apakah pernyataan saya pasti benar?", "harus_ada": ["tidak pasti benar"]}
+{"kategori": "tes AI", "soal": "Berikan tiga contoh angka yang jika dijumlahkan menghasilkan 30, tanpa menggunakan angka 10.", "harus_ada": ["= 30"]}
+{"kategori": "tes AI", "soal": "Saya memiliki dua koin dengan total Rp1.500. Salah satunya bukan koin Rp500. Koin apakah kedua koin tersebut?", "harus_ada": ["Rp1.000 dan Rp500"]}
+{"kategori": "variasi angka", "soal": "Jika hari ini hari Senin, 45 hari lagi hari apa?", "harus_ada": ["Kamis"]}
+{"kategori": "variasi angka", "soal": "Kalau hari ini Jumat, 10 hari yang lalu hari apa?", "harus_ada": ["Selasa"]}
+{"kategori": "variasi angka", "soal": "Angka berikutnya dari pola 3, 8, 15, 24, ...?", "harus_ada": ["35"]}
+{"kategori": "variasi angka", "soal": "Deret 5, 10, 20, 40, ... berikutnya berapa?", "harus_ada": ["80"]}
+{"kategori": "variasi angka", "soal": "Jika 7 mesin menghasilkan 7 produk dalam 7 menit, berapa waktu yang dibutuhkan 50 mesin untuk menghasilkan 50 produk?", "harus_ada": ["7 menit"]}
+{"kategori": "variasi angka", "soal": "Jika 4 tukang menyelesaikan 2 rumah dalam 10 hari, berapa hari yang dibutuhkan 8 tukang untuk menyelesaikan 4 rumah?", "harus_ada": ["10 hari"]}
+{"kategori": "variasi angka", "soal": "Buku dan pensil berharga Rp1.100. Buku Rp1.000 lebih mahal daripada pensil. Berapa harga pensil?", "harus_ada": ["Rp50"]}
+{"kategori": "variasi angka", "soal": "Dokter memberi 5 tablet, diminum satu tablet setiap 2 jam. Berapa lama sampai semua tablet habis?", "harus_ada": ["8 jam"]}
+{"kategori": "variasi angka", "soal": "Ada 6 jeruk. Kamu mengambil 4 jeruk. Berapa jeruk yang kamu miliki?", "harus_ada": ["4 jeruk"]}
+{"kategori": "variasi angka", "soal": "Ada 15 ikan di kolam akuarium. 4 ikan mati. Berapa ikan yang tersisa di akuarium?", "harus_ada": ["15 ikan"]}
+{"kategori": "variasi angka", "soal": "Jika kamu menyalip orang di posisi ketiga, kamu sekarang di posisi berapa?", "harus_ada": ["posisi ketiga"]}
+{"kategori": "variasi angka", "soal": "Ayah Sari punya 4 anak: Ani, Ana, Ari. Siapa anak keempat?", "harus_ada": ["Sari"]}
+{"kategori": "variasi angka", "soal": "Mana yang lebih berat, 2 kg kapas atau 1500 gram besi?", "harus_ada": ["2 kg kapas lebih berat"]}
+{"kategori": "variasi angka", "soal": "Berapa hasil dari 12 - 4 x 2?", "harus_ada": ["= 4"]}
+{"kategori": "variasi angka", "soal": "Semua mawar adalah bunga. Semua bunga adalah tumbuhan. Apakah semua mawar adalah tumbuhan?", "harus_ada": ["Ya"]}
+{"kategori": "variasi angka", "soal": "Berikan dua contoh angka yang dijumlahkan menghasilkan 20, tanpa menggunakan angka 5.", "harus_ada": ["= 20"]}
+{"kategori": "variasi angka", "soal": "Saya punya dua koin dengan total Rp1.200. Salah satunya bukan koin Rp200. Koin apa saja?", "harus_ada": ["Rp1.000 dan Rp200"]}

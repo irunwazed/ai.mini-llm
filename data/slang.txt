@@ -1,0 +1,47 @@
+# Kamus bahasa santai / singkatan -> bentuk baku.
+# Dipakai SEBELUM pesan diproses, supaya "gimana", "gak", "tau" dipahami sama seperti "bagaimana", "tidak", "tahu".
+# Format:  bentuk santai = bentuk baku      (beberapa bentuk santai boleh dipisah "|")
+# Tambahkan sendiri; tidak perlu training ulang (cukup jalankan ulang chat/web).
+
+tau|tw = tahu
+gimana|gmn|gmana = bagaimana
+gak|ga|nggak|enggak|ngga|ndak|tdk = tidak
+udah|udh|dah|sdh = sudah
+blm|belom = belum
+aja|aj = saja
+yg = yang
+dgn|dg = dengan
+utk|untk = untuk
+krn|karna = karena
+sy|gue|gua|gw|ane = saya
+lo|lu|elu|ente = kamu
+kalo|klo|kl = kalau
+pengen|pgn|pingin = ingin
+bikin = membuat
+nanya = bertanya
+brp|berape = berapa
+knp|napa = kenapa
+dmn|dimn = di mana
+kpn = kapan
+spt|kyk|kayak|kaya = seperti
+bgt|banget = sekali
+trs|trus = terus
+jg = juga
+lg = lagi
+sm|ama = sama
+org = orang
+tgl = tanggal
+thn = tahun
+bln = bulan
+hr = hari
+makasih|mksh|makasi|thx|tq = terima kasih
+ok|okey|oke|okay = oke
+emang|emg = memang
+gpp|gapapa|ngapapa = tidak apa-apa
+dpt|dapet = dapat
+bs|bisa2 = bisa
+skrg|skrng|sekarang2 = sekarang
+kerjaan = pekerjaan
+duit = uang
+ceritain|critain = ceritakan
+jelasin = jelaskan

@@ -1,0 +1,24 @@
+{"tanya": "berapa hari cuti tahunan pegawai?", "file": "samples/sample-employee-leave.txt", "pasal": "Pasal 3", "harus_ada": "12 hari kerja"}
+{"tanya": "apakah sisa cuti tahunan bisa dibawa ke tahun depan?", "file": "samples/sample-employee-leave.txt", "pasal": "Pasal 3", "harus_ada": "ditangguhkan"}
+{"tanya": "kapan harus melampirkan surat dokter saat sakit?", "file": "samples/sample-employee-leave.txt", "pasal": "Pasal 4", "harus_ada": "lebih dari 2 hari"}
+{"tanya": "berapa lama cuti melahirkan?", "file": "samples/sample-employee-leave.txt", "pasal": "Pasal 5", "harus_ada": "3 bulan"}
+{"tanya": "syarat mendapatkan cuti besar", "file": "samples/sample-employee-leave.txt", "pasal": "Pasal 6", "harus_ada": "5 tahun"}
+{"tanya": "kapan paling lambat mengajukan permohonan cuti?", "file": "samples/sample-employee-leave.txt", "pasal": "Pasal 7", "harus_ada": "7 hari sebelum"}
+{"tanya": "berapa uang harian perjalanan dinas luar kota?", "file": "samples/sample-official-travel.md", "pasal": "Pasal 3", "harus_ada": "Rp400.000"}
+{"tanya": "kalau tidak menginap di hotel dapat biaya penginapan berapa?", "file": "samples/sample-official-travel.md", "pasal": "Pasal 4", "harus_ada": "30%"}
+{"tanya": "batas waktu menyerahkan laporan perjalanan dinas", "file": "samples/sample-official-travel.md", "pasal": "Pasal 5", "harus_ada": "5 hari kerja"}
+{"tanya": "apa akibatnya jika tidak membuat laporan perjalanan dinas?", "file": "samples/sample-official-travel.md", "pasal": "Pasal 6", "harus_ada": "mengembalikan"}
+{"tanya": "batas nilai pengadaan langsung barang", "file": "samples/sample-procurement.txt", "pasal": "Pasal 3", "harus_ada": "Rp200.000.000"}
+{"tanya": "kapan boleh penunjukan langsung?", "file": "samples/sample-procurement.txt", "pasal": "Pasal 4", "harus_ada": "darurat bencana"}
+{"tanya": "sanksi penyedia yang memakai dokumen palsu", "file": "samples/sample-procurement.txt", "pasal": "Pasal 6", "harus_ada": "daftar hitam"}
+{"tanya": "berapa denda keterlambatan pekerjaan kontrak?", "file": "samples/sample-procurement.txt", "pasal": "Pasal 6", "harus_ada": "1/1000"}
+{"tanya": "bolehkah mobil dinas dipakai mudik?", "file": "samples/sample-official-vehicles.pdf", "pasal": "Pasal 2", "harus_ada": "Tidak."}
+{"tanya": "berapa batas bensin kendaraan dinas per bulan?", "file": "samples/sample-official-vehicles.pdf", "pasal": "Pasal 3", "harus_ada": "200 liter"}
+{"tanya": "apakah pemegang kendaraan dinas wajib servis berkala?", "file": "samples/sample-official-vehicles.pdf", "pasal": "Pasal 3", "harus_ada": "Ya, wajib."}
+{"tanya": "jam kerja pegawai dalam seminggu", "file": "samples/sample-working-hours.docx", "pasal": "Pasal 1", "harus_ada": "37 jam 30 menit"}
+{"tanya": "jam kerja saat puasa ramadan", "file": "samples/sample-working-hours.docx", "pasal": "Pasal 2", "harus_ada": "32 jam 30 menit"}
+{"tanya": "potongan tunjangan kinerja kalau terlambat masuk kerja", "file": "samples/sample-working-hours.docx", "pasal": "Pasal 3", "harus_ada": "1,5%"}
+{"tanya": "apa yang dimaksud dengan cuti?", "file": "samples/sample-employee-leave.txt", "pasal": "Pasal 1", "harus_ada": "tidak masuk kerja yang diizinkan"}
+{"tanya": "siapa presiden pertama indonesia?", "di_luar": true}
+{"tanya": "cara membuat paspor", "di_luar": true}
+{"tanya": "berapa tarif pajak penghasilan badan?", "di_luar": true}
