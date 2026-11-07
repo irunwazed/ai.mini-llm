@@ -11,7 +11,8 @@
  *               strategi berbeda sampai lolos cek atau habis:
  *                 a. Wikipedia Indonesia (kata kunci) -> paragraf pembuka
  *                 b. artikel Wikipedia lengkap dari hasil teratas
- *                 c. Brave Search API (hanya jika BRAVE_API_KEY diset)
+ *                 c. DuckDuckGo Instant Answer (definisi/entitas, tanpa kunci)
+ *                 d. Brave Search API (hanya jika BRAVE_API_KEY diset)
  *   Pilih     — kandidat berskor tertinggi; semua langkah tercatat (Pikir/Aksi/Hasil/Cek).
  */
 import { kataPertanyaan, namaDiri, pilihKalimatWeb } from "../answer/web-extract.js";
@@ -19,7 +20,7 @@ import { besaran, jenisPertanyaan, satuanDiminta } from "../answer/question-type
 import { AMBANG_NIAT, niatPesan } from "../chat-intent.js";
 import { KE_BOT, SAPAAN, TANYA_FAKTA, type LangkahProses, type MesinChat, type Mode, type OpsiProses, type Respons } from "../chat-engine.js";
 import type { LangkahAgent } from "../reasoning/agent.js";
-import { adaKunciWeb, artikelWikipedia, cariWeb, cariWikipedia, type HalamanWeb } from "../search/internet.js";
+import { adaKunciWeb, artikelWikipedia, cariDuckDuckGo, cariWeb, cariWikipedia, type HalamanWeb } from "../search/internet.js";
 import { keTerm } from "../text/normalize.js";
 import { normalisasiSlang } from "../text/slang.js";
 
@@ -204,6 +205,7 @@ async function cariDiInternet(pesan: string, langkah: LangkahAgent[], skorLokal:
     ]
     : [kataKunci, lengkap];
   strategi.push(
+    { pikir: "Wikipedia belum cukup -> coba definisi/entitas dari DuckDuckGo (API resmi, tanpa kunci).", aksi: `DuckDuckGo API: "${kunci}"`, jalan: () => cariDuckDuckGo(kunci, 5) },
     ...(adaKunciWeb() ? [{ pikir: "Wikipedia belum cukup -> cari di web umum.", aksi: `Brave Search API: "${pesan}"`, jalan: () => cariWeb(pesan, 5) }] : []),
   );
 
@@ -242,7 +244,7 @@ async function cariDiInternet(pesan: string, langkah: LangkahAgent[], skorLokal:
     return {
       jalur: "internet", teks, sumber, proses, topik,
       keyakinan: k0.cakupan >= 0.8 ? "tinggi" : "sedang",
-      label: "kutipan dari internet (API Wikipedia" + (adaKunciWeb() ? "/Brave" : "") + "), bukan dasar hukum",
+      label: "kutipan dari internet (API Wikipedia/DuckDuckGo" + (adaKunciWeb() ? "/Brave" : "") + "), bukan dasar hukum",
     };
   }
   return null;

@@ -194,7 +194,8 @@ Cakupan adalah bagian kata pertanyaan yang ada di jawaban. Skor jawaban pencaria
 
 1. Jika ada nama diri ("Soekarno", "Rinjani"), cari artikel subjeknya di Wikipedia, lalu baca artikel lengkapnya. Contohnya "Jakarta", yang dialihkan ke "Daerah Khusus Ibukota Jakarta".
 2. Cari Wikipedia dengan semua kata kunci.
-3. Opsional: Brave Search API.
+3. DuckDuckGo Instant Answer (API resmi, gratis, tanpa kunci): definisi/entitas saja — untuk pertanyaan biasa hasilnya sering kosong, dan Abstract biasanya bersumber Wikipedia, jadi ini pelengkap, bukan pengganti.
+4. Opsional: Brave Search API.
 
 Kalimat halaman dinilai dengan BM25 mini (`src/answer/web-extract.ts`), lalu dikutip apa adanya beserta tautannya. Sebuah kalimat lolos cek jika memenuhi tiga syarat:
 
@@ -212,8 +213,8 @@ Contoh hasil:
 
 Yang perlu diketahui:
 
-- **Internet hanya lewat API resmi.** Yang dipakai bawaan adalah API Wikipedia: gratis, tanpa kunci. Halaman hasil Google, DuckDuckGo, atau Bing tidak di-scrape, karena melanggar ketentuan layanan mereka dan diblokir pemeriksaan bot. Untuk web umum, buat kunci Brave Search API sendiri, lalu jalankan dengan variabel lingkungan `BRAVE_API_KEY`.
-- **Kata kunci pertanyaan dikirim ke Wikipedia** (dan ke Brave, jika diaktifkan). Jangan menanyakan data pribadi dalam mode agent. Pakai `--tanpa-internet` jika perlu (untuk web: `bun run web -- --tanpa-internet`).
+- **Internet hanya lewat API resmi.** Yang dipakai bawaan adalah API Wikipedia dan API DuckDuckGo Instant Answer: keduanya gratis, tanpa kunci. Halaman hasil mesin pencari (Google, DuckDuckGo, Bing) tidak di-scrape — termasuk halaman HTML DuckDuckGo, karena melanggar ketentuan layanan mereka dan diblokir pemeriksaan bot; yang dipakai hanya API resminya. Untuk web umum, buat kunci Brave Search API sendiri, lalu jalankan dengan variabel lingkungan `BRAVE_API_KEY`.
+- **Kata kunci pertanyaan dikirim ke Wikipedia dan DuckDuckGo** (dan ke Brave, jika diaktifkan). Jangan menanyakan data pribadi dalam mode agent. Pakai `--tanpa-internet` jika perlu (untuk web: `bun run web -- --tanpa-internet`).
 - **Jawaban internet bukan dasar hukum.** Jawaban itu selalu diberi label "kutipan dari internet".
 - **Pencocokan masih berbasis kata, bukan makna.** Kalimat yang memuat semua kata kunci bisa saja menjawab hal lain. Selalu periksa tautan sumbernya.
 - **Mode agent lebih lambat.** Semua mode dijalankan, ditambah ±0,5–3 detik jika mencari di internet.

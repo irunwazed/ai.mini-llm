@@ -4,7 +4,11 @@
  *   1. Wikipedia Indonesia (API MediaWiki, gratis, tanpa kunci):
  *        - cariWikipedia     : cari judul yang cocok + paragraf pembuka (intro) beberapa artikel
  *        - artikelWikipedia  : teks lengkap satu artikel (dipakai bila intro belum memuat jawabannya)
- *   2. Brave Search API (opsional, butuh kunci gratis/berbayar milik Anda sendiri):
+ *   2. DuckDuckGo Instant Answer (API resmi, gratis, tanpa kunci):
+ *        cariDuckDuckGo — definisi/entitas (Abstract, Answer, RelatedTopics).
+ *        INI BUKAN hasil web penuh: untuk pertanyaan biasa hasilnya sering kosong,
+ *        dan Abstract biasanya bersumber Wikipedia (jadi pelengkap, bukan pengganti).
+ *   3. Brave Search API (opsional, butuh kunci gratis/berbayar milik Anda sendiri):
  *        set variabel lingkungan BRAVE_API_KEY, lalu cuplikan hasil web ikut dipakai.
  *
  * Halaman hasil mesin pencari biasa (Google/DuckDuckGo/Bing) TIDAK di-scrape: itu melanggar
@@ -62,6 +66,35 @@ export function artikelWikipedia(judul: string, bahasa = "id"): Promise<HalamanW
 }
 
 export const adaKunciWeb = () => !!process.env.BRAVE_API_KEY;
+
+/**
+ * DuckDuckGo Instant Answer (api.duckduckgo.com): API resmi, gratis, tanpa kunci.
+ * Mengembalikan Abstract/Answer/RelatedTopics — definisi & entitas saja, bukan hasil web.
+ * Kueri pertanyaan biasa sering kosong; jangan mengandalkan DDG sebagai satu-satunya sumber.
+ */
+export function cariDuckDuckGo(kueri: string, n = 5): Promise<HalamanWeb[]> {
+  return dariCache(`ddg:${kueri}`, async () => {
+    const p = new URLSearchParams({ q: kueri, format: "json", no_html: "1", skip_disambig: "1" });
+    const j = await json(`https://api.duckduckgo.com/?${p}`);
+    const html = (s: string) => s.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, " ").trim();
+    const hal: HalamanWeb[] = [];
+
+    const abstrak = html(j.AbstractText || j.Abstract || "");
+    if (abstrak) {
+      const asal = j.AbstractSource ? `DuckDuckGo (via ${j.AbstractSource})` : "DuckDuckGo";
+      hal.push({ judul: html(j.AbstractHeading || j.Heading || kueri), url: j.AbstractURL || `https://duckduckgo.com/?q=${encodeURIComponent(kueri)}`, teks: abstrak, asal });
+    }
+    const jawab = html(j.Answer || "");
+    if (jawab && !abstrak.includes(jawab)) hal.push({ judul: `Jawaban: ${kueri}`, url: `https://duckduckgo.com/?q=${encodeURIComponent(kueri)}`, teks: jawab, asal: "DuckDuckGo" });
+
+    const topik = (j.RelatedTopics ?? []).flatMap((t: any) => t.Topics ?? [t]);
+    for (const t of topik.slice(0, n)) {
+      const teks = html(t.Text || "");
+      if (teks && t.FirstURL) hal.push({ judul: teks.split(" - ")[0].slice(0, 80), url: t.FirstURL, teks, asal: "DuckDuckGo" });
+    }
+    return hal;
+  });
+}
 
 export function cariWeb(kueri: string, n = 5): Promise<HalamanWeb[]> {
   const kunci = process.env.BRAVE_API_KEY;

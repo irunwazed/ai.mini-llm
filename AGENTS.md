@@ -4,33 +4,34 @@ Proyek Bun + TypeScript: (1) chatbot aturan pemerintah berbasis pencarian, (2) G
 
 ## Commands
 
-- `bun install` — sekali saja (bun.lock; jangan pakai npm/yarn).
-- `bun run typecheck` — satu-satunya pemeriksaan umum (`tsc --noEmit`, cover hanya `src/` dan `lessons/`). Jalankan setiap selesai mengubah kode.
-- `bun run test-gpt` — gradient check + overfit test untuk `src/gpt/`; wajib setiap mengubah forward/backward/optimizer GPT.
-- `bun run eval` — ukur akurasi dari `evaluation/questions.jsonl`; **butuh `model/` hasil `bun run train` lebih dulu**.
+- `bun install` — sekali saja (bun.lock; jangan pakai npm/yarn). Berjalan di Bun, bukan Node (`Bun.serve` di web, worker thread di train-gpt).
+- `bun run typecheck` — satu-satunya pemeriksaan statis (`tsc --noEmit`, cover hanya `src/` dan `lessons/`). Jalankan setiap selesai mengubah kode.
+- `bun run test-gpt` — gradient check + overfit test untuk `src/gpt/`; wajib setiap mengubah forward/backward/optimizer/sampling GPT.
+- Eval chatbot (semua butuh `model/` hasil `bun run train` lebih dulu):
+  - `bun run eval` — akurasi dari `evaluation/questions.jsonl`.
+  - `bun run eval-chat` — "nyambung" dari `evaluation/conversations.jsonl`; baseline sekarang 100% (58/58).
+  - `bun run eval-reasoning` — soal logika dari `evaluation/reasoning.jsonl`; baseline sekarang 42/42.
+  - Ketiganya menerima `-- --soal path/file.jsonl` untuk file uji lain. Satu pertanyaan: `bun run search -- "berapa hari cuti?"`.
 - Tidak ada lint, formatter, test runner (`bun test`), CI, atau pre-commit di repo ini — jangan mengarang perintah verifikasi lain.
 - Argumen CLI lewat `--`: `bun run train -- --dokumen path --tanpa-embedding`. Parser di `src/commands/args.ts`; folder bawaan dokumen `documents`, model `model`.
-
-## README.md sebagian sudah basi — percaya kode, bukan README
-
-- Struktur folder di README memakai nama lama; nama asli sekarang:
-  `dokumen/`→`documents/`, `pelajaran/`→`lessons/`, `evaluasi/`→`evaluation/`,
-  `src/baca`→`src/readers`, `src/teks`→`src/text`, `src/latih`→`src/training`,
-  `src/cari`→`src/search`, `src/jawab`→`src/answer`, `src/perintah`→`src/commands`.
-- Script `cek-tipe` / `pelajaran:1` tidak ada; yang benar `bun run typecheck`, `bun run lesson:1`.
-- Ambang keyakinan ada di `src/answer/compose.ts` (`AMBANG_TINGGI` 0.6, `AMBANG_SEDANG` 0.35, `AMBANG_KEKUATAN` 0.9), bukan `src/jawab/susun.ts`.
+  - **Flag boolean baru wajib didaftarkan di set `FLAG`** di `src/commands/args.ts`, kalau tidak `--flag` berikutnya akan menelan argumen sesudahnya sebagai nilai.
 
 ## Arsitektur
 
 - Dua subsistem terpisah; perubahan di satu tidak memengaruhi yang lain:
   - **Chatbot retrieval**: `src/readers` (PDF/DOCX/TXT + cache) → `src/text` (bersih, potong per pasal, stemmer) → `src/training` (metadata, istilah, word2vec) → `src/search` (BM25 + RRF) → `src/answer` (susun jawaban + dasar hukum). State di `src/model.ts`.
   - **GPT dari nol**: `src/gpt/` (BPE, matriks, layer, Adam, sampling, checkpoint) — latih multi-worker via `SharedArrayBuffer`.
-- **Mode agent** (`src/agent/multi-mode.ts`, async) menjalankan semua mode `MesinChat.proses` lalu memilih skor tertinggi; jika < 0,6 mencari internet lewat `src/search/internet.ts` (hanya API resmi: Wikipedia, Brave opsional via `BRAVE_API_KEY`; jangan scrape mesin pencari). `bun run eval-chat -- --agent` menguji mode ini tanpa internet.
-- Entry point = satu file per script di `src/commands/*.ts` (lihat `package.json` `scripts`).
-- Artefak training di-gitignore dan tidak boleh di-commit: `model/` (termasuk cache baca per-file di `model/cache/`) dan `gpt-models/`. `chat`/`search`/`eval` gagal sampai `bun run train` pernah dijalankan. Setiap dokumen ditambah/diubah → `bun run train` ulang (file tak berubah dari cache).
+- **Mode agent** (`src/agent/multi-mode.ts`, async) menjalankan semua mode `MesinChat.proses` lalu memilih skor tertinggi; jika < 0,6 (`AMBANG_PUAS`) mencari internet lewat `src/search/internet.ts` (hanya API resmi: Wikipedia, DuckDuckGo Instant Answer tanpa kunci — hanya definisi/entitas, bukan hasil web —, Brave opsional via `BRAVE_API_KEY`; jangan scrape mesin pencari, termasuk HTML DuckDuckGo). `bun run eval-chat -- --agent` menguji mode ini tanpa internet.
+- Entry point tiap script: `src/commands/*.ts` (lihat `package.json` `scripts`; kecuali `make-chat-data` → `src/gpt/chat-data.ts`, `lesson:*` → `lessons/`).
+- Artefak training di-gitignore, jangan di-commit: `model/` (termasuk cache per-file di `model/cache/`), `model-wiki/`, `gpt-models/`, `data/wiki-id*.txt`, `data/memory.json`, `exports/`.
+  - `chat`/`search`/`eval*` gagal sampai `bun run train` pernah dijalankan; `model-wiki/` (hasil `bun run index-wiki`) dan `gpt-models/` opsional — tanpanya fitur terkait dilewati, bukan error.
+  - Setiap dokumen ditambah/diubah → `bun run train` ulang (file tak berubah dibaca dari cache).
+  - Jangan jalankan dua `train-gpt` dengan `--name` sama bersamaan (checkpoint saling menimpa).
+- `documents/samples/` (dokumen fiktif) dirujuk `evaluation/questions.jsonl` — jangan dihapus, soal evaluasi jadi rusak.
 
 ## Konvensi
 
 - Seluruh identifier, flag CLI, komentar, dan pesan console sengaja berbahasa Indonesia — pertahankan untuk kode baru.
 - ESM `moduleResolution: NodeNext`: import file `.ts` harus ditulis berekstensi `.js` (`from "../model.js"`), atau typecheck gagal.
 - Word2vec otomatis dilewati bila korpus < 200.000 token (`--min-token`); `emb === null` itu normal, bukan bug.
+- README.md sudah dicek terhadap kode (nama perintah, struktur folder, lokasi file) dan akurat; angka hasil di dalamnya (loss, waktu training) bisa basi. Jika konflik, percaya kode.
