@@ -12,6 +12,7 @@
  * Pakai:  bun run eval-chat
  *         bun run eval-chat -- --soal evaluation/conversations.jsonl
  *         bun run eval-chat -- --agent      (lewat mode agent, tanpa internet agar hasilnya tetap)
+ *         bun run eval-chat -- --rag        (lewat mode RAG: GPT pembaca + konteks memori)
  */
 import { readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -21,7 +22,9 @@ import { jalankanModeAgent } from "../agent/multi-mode.js";
 import { argumen } from "./args.js";
 
 interface Giliran { pesan: string; jalur?: string; harus_ada?: string | string[]; tidak_ada?: string[] }
-interface Percakapan { nama: string; memori?: string[]; giliran: Giliran[] }
+/** rag: true = percakapan ini selalu diuji lewat mode RAG (dilewati jika GPT pembaca belum dilatih). */
+/** agent: true = percakapan ini selalu diuji lewat mode agent (menguji loop perbaikan; tanpa internet kecuali --internet). */
+interface Percakapan { nama: string; memori?: string[]; rag?: boolean; agent?: boolean; giliran: Giliran[] }
 
 const { opsi, folderModel } = argumen();
 const daftar: Percakapan[] = readFileSync(opsi.soal ?? "evaluation/conversations.jsonl", "utf8")
@@ -31,15 +34,17 @@ const mesin = new MesinChat({ folderModel, fileMemori });
 
 let lulus = 0, total = 0;
 const gagal: string[] = [];
+let dilewati = 0;
 for (const p of daftar) {
+  if (p.rag && !mesin.pembaca) { dilewati++; continue; }
   mesin.memori.hapusSemua();
   for (const m of p.memori ?? []) mesin.memori.tambah(m);
   let topik: Topik | null = null;
   const riwayat: GiliranRiwayat[] = [];
   for (const g of p.giliran) {
-    const r: Respons = opsi.agent === "true"
-      ? await jalankanModeAgent(mesin, g.pesan, { riwayat, topik, internet: false })
-      : mesin.proses(g.pesan, { riwayat, topik });
+    const r: Respons = opsi.agent === "true" || p.agent
+      ? await jalankanModeAgent(mesin, g.pesan, { riwayat, topik, internet: opsi.internet === "true", rag: p.rag })
+      : mesin.proses(g.pesan, { riwayat, topik, mode: opsi.rag === "true" || p.rag ? "rag" : undefined });
     topik = r.topik;
     riwayat.push({ user: g.pesan, bot: r.teks, jalur: r.jalur });
     const teks = r.teks.toLowerCase();
@@ -55,6 +60,7 @@ for (const p of daftar) {
 }
 rmSync(fileMemori, { force: true });
 
-console.log(`Percakapan: ${daftar.length} | giliran: ${total}${opsi.agent === "true" ? " | mode agent (tanpa internet)" : ""}`);
+console.log(`Percakapan: ${daftar.length} | giliran: ${total}${opsi.agent === "true" ? " | mode agent (tanpa internet)" : ""}${opsi.rag === "true" ? " | mode RAG" : ""}`);
+if (dilewati) console.log(`(${dilewati} percakapan RAG dilewati: belum ada GPT pembaca)`);
 console.log(`Nyambung: ${((100 * lulus) / total).toFixed(1)}%  (${lulus}/${total})`);
 if (gagal.length) console.log(`\nTidak nyambung:\n${gagal.join("\n")}`);

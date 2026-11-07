@@ -16,11 +16,17 @@
  *
  * Pakai:  bun run eval
  *         bun run eval -- --soal evaluation/questions.jsonl
+ *         bun run eval -- --rag      (+ GPT pembaca: berapa jawaban pembaca yang DITERIMA verifikasi, dan berapa yang benar)
  */
 import { readFileSync } from "node:fs";
 import { cari } from "../search/search.js";
 import { jawab } from "../answer/compose.js";
 import { muatModel } from "../model.js";
+import { Tokenizer } from "../gpt/bpe.js";
+import { gptTerbaru, muatGPT } from "../gpt/checkpoint.js";
+import { GPT } from "../gpt/model.js";
+import { f1Kata } from "../gpt/reader.js";
+import { bacaRAG, type Pembaca } from "../rag/pipeline.js";
 import { argumen } from "./args.js";
 
 interface Soal { tanya: string; file?: string; pasal?: string; harus_ada?: string; di_luar?: boolean }
@@ -29,6 +35,15 @@ const { opsi, folderModel } = argumen();
 const soal: Soal[] = readFileSync(opsi.soal ?? "evaluation/questions.jsonl", "utf8")
   .split(/\r?\n/).filter((s) => s.trim()).map((s) => JSON.parse(s));
 const model = muatModel(folderModel);
+let pembaca: Pembaca | null = null;
+if (opsi.rag === "true") {
+  const n = opsi.pembaca ?? gptTerbaru("pembaca");
+  if (!n) { console.error("Belum ada GPT pembaca. Latih dulu: bun run make-reader-data && bun run train-reader"); process.exit(1); }
+  const { meta, P } = muatGPT(n);
+  pembaca = { nama: n, model: new GPT(meta.config, P), tok: new Tokenizer(meta.bpe), hurufKecil: meta.hurufKecil, ambang: meta.pembaca?.ambang ?? 0.5, f1: meta.pembaca?.f1 ?? 0 };
+}
+let nDiterima = 0, okDiterima = 0, okRag = 0;
+const catatanRag: string[] = [];
 
 const K = [1, 3, 5];
 const benar = new Map(K.map((k) => [k, 0]));
@@ -57,7 +72,15 @@ for (const s of soal) {
     nJawab++;
     const j = jawab(model, s.tanya);
     const utama = j.utama.join(" ");
-    if (norm(utama).includes(norm(s.harus_ada))) okJawab++;
+    const okUtama = norm(utama).includes(norm(s.harus_ada));
+    if (pembaca) {
+      const r = bacaRAG(pembaca, model, j, s.tanya);
+      const okSpan = r.diterima && (norm(r.jawaban).includes(norm(s.harus_ada)) || f1Kata(r.jawaban, s.harus_ada) >= 0.5);
+      if (r.diterima) { nDiterima++; if (okSpan) okDiterima++; }
+      if (r.diterima ? okSpan || okUtama : okUtama) okRag++;
+      catatanRag.push(`  ${r.diterima ? (okSpan ? "✓" : "✗") : "·"} "${s.tanya}" -> ${r.jawaban ? `"${r.jawaban}" (${(100 * r.keyakinan).toFixed(0)}%)` : "-"} ${r.diterima ? "diterima" : `ditolak: ${r.alasan.join("; ")}`}`);
+    }
+    if (okUtama) okJawab++;
     else salah.push(`  - "${s.tanya}"\n      jawaban tidak memuat "${s.harus_ada}": ${utama.slice(0, 160) || "(tidak menjawab)"}`);
   }
 }
@@ -68,4 +91,10 @@ for (const k of K) console.log(`  Recall@${k}    : ${pct(benar.get(k)!, nCari)}`
 console.log(`  MRR         : ${(mrr / Math.max(1, nCari)).toFixed(3)}`);
 console.log(`Akurasi jawaban: ${pct(okJawab, nJawab)}  (${okJawab}/${nJawab})`);
 console.log(`Penolakan benar: ${pct(okLuar, nLuar)}  (${okLuar}/${nLuar})`);
+if (pembaca) {
+  console.log(`\nRAG (GPT pembaca "${pembaca.nama}", ambang ${pembaca.ambang}):`);
+  console.log(`  diterima verifikasi : ${nDiterima}/${nJawab}, benar ${okDiterima}/${nDiterima}`);
+  console.log(`  akurasi jawaban RAG : ${pct(okRag, nJawab)}  (rentang pembaca jika diterima, selain itu penyusun aturan)`);
+  console.log(catatanRag.join("\n"));
+}
 if (salah.length) console.log(`\nPerlu diperhatikan:\n${salah.join("\n")}`);

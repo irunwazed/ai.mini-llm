@@ -32,10 +32,21 @@
   .meta { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; font-size: 12px; color: var(--muted); }
   .badge { padding: 1px 8px; border-radius: 999px; color: #fff; font-weight: 600; font-size: 11px; letter-spacing: .3px; text-transform: uppercase; }
   .b-aturan { background: var(--aturan); } .b-wiki { background: var(--wiki); } .b-obrolan { background: var(--obrolan); }
-  .b-tidak-ditemukan { background: var(--tidak); } .b-memori { background: var(--memori); } .b-detail { background: var(--detail); } .b-maksud { background: #3d7a8a; } .b-penalaran { background: #b5442e; } .b-internet { background: #2f6f4f; } .b-klarifikasi { background: #6b6a64; }
+  .b-tidak-ditemukan { background: var(--tidak); } .b-memori { background: var(--memori); } .b-detail { background: var(--detail); } .b-maksud { background: #3d7a8a; } .b-penalaran { background: #b5442e; }
+  .baca { line-height: 2.1; font-size: 13px; }
+  .baca span { padding: 2px 1px; border-radius: 3px; }
+  .baca span.jawab { outline: 2px solid #1f6f3f; } .b-internet { background: #2f6f4f; } .b-klarifikasi { background: #6b6a64; }
   .agent { border: 1px solid var(--line); border-radius: 8px; background: #fff; padding: 8px 10px; margin: 6px 0; font-size: 13px; }
   .agent.ditolak { border-color: #e6b8a2; background: #fdf6f2; }
   .agent b { display: inline-block; min-width: 52px; }
+  details.rinci { margin-top: 6px; border-top: 1px dashed var(--line); padding-top: 4px; }
+  .http { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin: 6px 0; background: #fafaf7; }
+  pre.kode { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; white-space: pre-wrap; word-break: break-all; background: #1d1d1b; color: #e8e6df; padding: 8px; border-radius: 6px; margin: 4px 0; }
+  pre.kode.respons { max-height: 320px; overflow: auto; white-space: pre; word-break: normal; }
+  button.kecil { font-size: 11px; padding: 2px 8px; }
+  details.rinci > summary { cursor: pointer; font-size: 12px; font-weight: 600; color: #2f5d8a; }
+  details.rinci table { font-size: 12px; margin: 4px 0; }
+  td.pilih { font-weight: 700; } td.ok { color: #1f6f3f; font-weight: 700; } td.tidak { color: #a33; }
   .label { color: var(--muted); font-size: 12px; margin-top: 6px; font-style: italic; }
   .ref { color: var(--wiki); font-weight: 600; cursor: pointer; }
   .simpan { display: block; margin-top: 4px; font-size: 11px; color: #cfcfcf; cursor: pointer; text-align: right; }
@@ -116,12 +127,13 @@
   <div class="kontrol">
     <label>Mode
       <select id="mode">
+        <option value="agent">Agent (semua mode + internet)</option>
         <option value="otomatis">Otomatis (semua jalur)</option>
         <option value="aturan">Hanya dokumen aturan</option>
         <option value="wiki">Hanya Wikipedia</option>
         <option value="gpt">Hanya GPT</option>
         <option value="penalaran">Hanya penalaran</option>
-        <option value="agent">Agent (semua mode + internet)</option>
+        <option value="rag">RAG (GPT pembaca)</option>
       </select>
     </label>
     <label title="Suhu sampling GPT: kecil = konsisten, besar = acak">Suhu GPT <input type="range" id="suhu" min="0.1" max="1.5" step="0.1" value="0.4"> <span id="suhuNilai">0.4</span></label>
@@ -179,7 +191,7 @@ function toast(teks) { const t = $("#toast"); t.textContent = teks; t.classList.
 
 function muatInfo() {
   fetch("/api/info").then((r) => r.json()).then((i) => {
-    $("#info").textContent = `aturan: ${i.aturan.pasal} pasal / ${i.aturan.dokumen} dokumen · Wikipedia: ${i.wiki ? i.wiki.artikel + " artikel" : "—"} · GPT: ${i.gpt ? `${i.gpt.nama} (${i.gpt.parameter.toLocaleString("id-ID")} parameter)` : "—"} · memori: ${i.memori}`;
+    $("#info").textContent = `aturan: ${i.aturan.pasal} pasal / ${i.aturan.dokumen} dokumen · Wikipedia: ${i.wiki ? i.wiki.artikel + " artikel" : "—"} · GPT: ${i.gpt ? `${i.gpt.nama} (${i.gpt.parameter.toLocaleString("id-ID")} parameter)` : "—"} · memori: ${i.memori}${i.pembaca ? ` · GPT pembaca: ${i.pembaca.nama} (F1 val ${Math.round(100 * i.pembaca.f1)}%)` : ""}`;
   });
 }
 muatInfo();
@@ -302,7 +314,7 @@ function tampilProses(msg, pertanyaan, r) {
     ["Memori", tahap.includes("Cari di memori pengguna")],
     ["GPT obrolan", r.jalur === "obrolan"],
   ];
-  if (tahap.includes("Agent multi-mode")) node.unshift(["Agent: semua mode", true]);
+  if (tahap.includes("Agent multi-mode")) node.unshift(["Agent: loop alat", true]);
   if (tahap.includes("Cari di internet") || r.jalur === "internet") node.push(["Internet", true]);
   if (r.jalur === "detail") node.unshift(["Detail sumber", true]);
   const dipilih = { aturan: "Dokumen aturan", wiki: "Wikipedia", obrolan: "GPT obrolan", memori: "Memori", detail: "Detail sumber", maksud: "Pahami maksud", penalaran: "Agent penalaran", internet: "Internet", klarifikasi: "Dokumen aturan" }[r.jalur];
@@ -318,7 +330,12 @@ function tampilProses(msg, pertanyaan, r) {
     if (p.tahap === "Normalisasi bahasa santai") l.append(blokSlang(p.data));
     if (p.tahap === "Pemahaman maksud") l.append(awam("Beberapa maksud penting dikenali dengan pola kalimat yang pasti, bukan ditebak GPT: perkenalan (“namaku Irun”, “aku Sari”) dan pertanyaan tentang diri Anda (“siapa aku?”, “tau aku?”, “kenal saya?”). Model GPT kecil masih sering salah pada kalimat seperti ini, jadi pola tetap lebih andal. Nama diambil dari memori; jika belum disimpan, dari perkenalan di percakapan ini."));
     if (p.tahap === "Agent penalaran" && p.data) l.append(blokAgent(p.data));
-    if (p.tahap === "Agent multi-mode" && p.data) l.append(blokAgent(p.data, "Mode agent mencoba SEMUA mode (otomatis, penalaran, dokumen aturan, Wikipedia lokal, GPT) seperti mencoba beberapa alat. Setiap hasil diberi skor 0–1: jawaban pasti (pola maksud, hitungan) tinggi; jawaban pencarian = keyakinan × (0,2 + 0,8 × cakupan²), dengan cakupan = bagian kata pertanyaan yang ada di jawaban; balasan GPT tinggi untuk sapaan tetapi rendah untuk pertanyaan fakta. Jika skor terbaik belum mencapai 0,6 dan pesan berupa pertanyaan, agent mencari di internet (API Wikipedia, lalu DuckDuckGo untuk definisi/entitas, lalu Brave bila ada kunci) dengan beberapa strategi, berhenti begitu ada kalimat yang memuat ≥ 50% kata pertanyaan. Kalimat dikutip apa adanya beserta tautannya. Langkah terakhir membandingkan semua kandidat."));
+    if (p.tahap === "Ambil konteks (RAG)" && p.data) l.append(blokKonteks(p.data));
+    if (p.tahap.startsWith("GPT pembaca") && p.data) l.append(blokPembaca(p.data));
+    if (p.tahap === "Verifikasi jawaban pembaca") l.append(awam("Jawaban pembaca hanya dipakai jika (1) keyakinannya di atas ambang yang ditentukan saat training, (2) bentuknya cocok dengan pertanyaan (“berapa” harus berisi angka, “kapan” harus berisi waktu), dan (3) kalimat asalnya memuat sebagian besar kata topik pertanyaan. Jika tidak, jawaban disusun oleh penyusun aturan seperti biasa. Penjelasan dan dasar hukum di bawah jawaban singkat selalu dari penyusun aturan."));
+    if (p.tahap === "Pahami konteks percakapan") l.append(blokKonteksPercakapan(p.data));
+    if (p.tahap === "Agent: pahami maksud" && p.data) l.append(blokNiat(p.data.niat));
+    if (p.tahap === "Agent multi-mode" && p.data) l.append(blokAgent(p.data, "Agent bekerja dalam LOOP: (1) pahami maksud Anda, (2) pakai alat yang paling sesuai (jalur otomatis, dokumen aturan, GPT pembaca, Wikipedia lokal, memori, atau Wikipedia/DuckDuckGo di internet), (3) BANDINGKAN hasilnya dengan maksud tadi: apakah bentuk jawabannya benar (angka + satuan untuk “berapa”, tanggal untuk “kapan”, nama untuk “siapa”), apakah nama yang ditanya disebut, apakah kata yang ditanya ada, apakah sumbernya sesuai. (4) Jika belum cocok, kekurangannya menentukan langkah berikutnya: nama tidak disebut → cari artikel tentang nama itu; tanpa angka → baca artikel lengkap; kata hilang → coba padanan katanya; sumber salah → ganti sumber. Loop berhenti begitu cocok (atau setelah 8 langkah). (5) Terakhir semua hasil dibandingkan: jawaban utama + informasi pendukung dari sumber lain, atau pertanyaan balik jika belum yakin."));
     if (p.tahap === "Cari di internet") l.append(awam("Halaman internet tidak ada di indeks kita, jadi kalimat-kalimatnya dinilai seketika dengan BM25 mini: kata pertanyaan yang jarang muncul di kalimat-kalimat itu bernilai lebih tinggi (IDF). Nama diri di pertanyaan (mis. “Soekarno”) wajib ada di kalimat, dan artikel yang judulnya cocok dengan subjek diutamakan."));
     if (p.tahap === "Pemeriksa relevansi") l.append(awam("Sebelum ditampilkan, jawaban diperiksa: apakah benar-benar menjawab pertanyaan? Misalnya pertanyaan “berapa” harus dijawab dengan angka, “apa itu X” harus dijawab dengan kalimat “X adalah …”, dan kalimat jawaban harus memuat sebagian besar kata yang ditanya. Jawaban yang gagal ditolak, lalu jalur berikutnya dicoba. Jika pertanyaan cocok dengan beberapa aturan berbeda, bot bertanya balik."));
     if (p.tahap === "Kenali niat obrolan") l.append(awam("Pesan dibandingkan dengan contoh-contoh obrolan (salam, terima kasih, curhat, dst.) dengan menghitung kata yang sama. Niat yang paling mirip menjadi patokan untuk memeriksa balasan GPT."));
@@ -342,6 +359,8 @@ function blokAgent(x, penjelasan) {
     const baris = (lbl, isi) => { const d = el("div"); d.append(el("b", "", lbl), document.createTextNode(isi)); return d; };
     kotak.append(el("div", "hasil", `Langkah ${i + 1}`), baris("Pikir", l.pikir), baris("Aksi", l.aksi), baris("Hasil", l.hasil), baris("Cek", l.cek));
     if (l.rincian?.length) kotak.append(rumus(l.rincian.join("\n")));
+    if (l.detail?.simpulkan) kotak.append(rincianSimpulan(l.detail));
+    else if (l.detail) kotak.append(rincianAlat(l.detail));
     w.append(kotak);
   });
   return w;
@@ -353,6 +372,175 @@ function blokPercobaan(x) {
   const t = el("table"); t.innerHTML = "<tr><th>#</th><th>Suhu</th><th>Balasan GPT</th><th>Niat balasan</th><th>Hasil</th></tr>";
   x.percobaan.forEach((p, i) => { const tr = el("tr"); tr.append(el("td", "num", String(i + 1)), el("td", "num", f2(p.suhu, 1)), el("td", "", p.teks), el("td", "", `${p.niat ?? "-"} (${f2(p.skor)})`), el("td", "", p.diterima ? "diterima ✓" : "ditolak ✗")); t.append(tr); });
   w.append(t);
+  return w;
+}
+
+function blokKonteks(x) {
+  const w = el("div");
+  w.append(awam("RAG = Retrieval-Augmented Generation: sebelum menjawab, bot MENGAMBIL beberapa potongan teks yang relevan, lalu MEMBACANYA. Selain hasil pencarian, ikut diambil pasal yang dirujuk (“sebagaimana dimaksud dalam Pasal 5”), lanjutan pasal yang sama, dan catatan memori Anda yang relevan."));
+  const t = el("table"); t.innerHTML = "<tr><th>Potongan</th><th>Alasan masuk</th><th>Skor</th><th>Cuplikan</th></tr>";
+  x.konteks.forEach((k) => { const tr = el("tr"); tr.append(el("td", "", k.label), el("td", "", k.alasan), el("td", "num", f2(k.skor)), el("td", "", k.cuplikan)); t.append(tr); });
+  w.append(t);
+  return w;
+}
+
+function blokPembaca(x) {
+  const w = el("div");
+  w.append(awam(`GPT pembaca membaca “pertanyaan + konteks” sekaligus, lalu untuk SETIAP token memberi dua peluang: peluang jawaban DIMULAI di token itu (hijau) dan peluang jawaban BERAKHIR di token itu (oranye). Rentang terbaik = pasangan awal–akhir dengan hasil kali peluang terbesar. Kotak ∅ berarti “tidak ada jawaban di sini”. Keyakinan = peluang rentang ÷ (peluang rentang + peluang ∅) = ${Math.round(100 * x.keyakinan)}% (ambang ${Math.round(100 * x.ambang)}%). Karena jawabannya selalu disalin dari konteks, pembaca tidak bisa mengarang angka atau nama baru.`));
+  const d = el("div", "baca");
+  x.token.forEach((tk, i) => {
+    const s = el("span", x.pilih && i >= x.pilih[0] && i <= x.pilih[1] ? "jawab" : "", tk);
+    const a = x.pAwal[i] ?? 0, b = x.pAkhir[i] ?? 0;
+    s.style.background = `linear-gradient(90deg, rgba(31,140,80,${Math.min(1, a * 3)}) 50%, rgba(220,120,30,${Math.min(1, b * 3)}) 50%)`;
+    s.title = `awal ${(100 * a).toFixed(1)}% · akhir ${(100 * b).toFixed(1)}%`;
+    d.append(s);
+  });
+  w.append(d);
+  if (x.dibaca?.length > 1) {
+    w.append(h4("Hasil membaca setiap potongan"));
+    const t = el("table"); t.innerHTML = "<tr><th>Potongan</th><th>Rentang</th><th>Keyakinan</th></tr>";
+    x.dibaca.forEach((r) => { const tr = el("tr"); tr.append(el("td", "", r.label), el("td", "", r.jawaban || "∅"), el("td", "num", `${Math.round(100 * r.keyakinan)}%`)); t.append(tr); });
+    w.append(t);
+  }
+  return w;
+}
+
+function tabel(kepala, baris) {
+  const t = el("table");
+  const h = el("tr"); for (const k of kepala) h.append(el("th", "", k)); t.append(h);
+  for (const b of baris) { const tr = el("tr"); for (const c of b) tr.append(c instanceof Node ? c : el("td", typeof c === "number" ? "num" : "", String(c ?? "-"))); t.append(tr); }
+  return t;
+}
+const td = (teks, cls = "") => el("td", cls, teks);
+const tanda = (ok) => td(ok ? "✓" : "✗", ok ? "ok" : "tidak");
+
+function blokNiat(n) {
+  const w = el("div");
+  w.append(awam("Sebelum mencari, agent menebak dulu MAKSUD Anda. Hasil tebakan ini menjadi patokan untuk menilai setiap jawaban yang ditemukan alat: misalnya pertanyaan “berapa tinggi …” harus dijawab dengan angka + satuan, dan nama yang Anda sebut harus muncul di jawaban."));
+  const j = n.jejak;
+  w.append(tabel(["Hasil", ""], [
+    ["Jenis pesan", n.jenis], ["Bentuk jawaban yang dicari", n.bentuk + (n.satuan ? " (satuan " + n.satuan + ")" : "")],
+    ["Pertanyaan yang dipakai mencari", n.kueri], ["Kata yang ditanya (wajib ada)", n.kataKunci.join(", ") || "-"],
+    ["Subjek lanjutan (cukup salah satu)", n.kataSubjek.join(", ") || "-"], ["Nama diri (wajib disebut)", n.entitas.join(", ") || "-"],
+    ["Sumber paling mungkin", n.domain],
+  ].map(([a, b]) => [el("th", "", a), td(b)])));
+  if (!j) return w;
+
+  w.append(h4("1. Bahasa santai → baku"));
+  w.append(j.slang.length ? rumus(j.slang.map(([a, b]) => `${a} → ${b}`).join("\n")) : awam("Tidak ada kata santai yang perlu diubah."));
+
+  w.append(h4("2. Konteks percakapan sebelumnya"));
+  w.append(awam("Bot memeriksa apakah pesan ini melanjutkan pembahasan sebelumnya: memakai kata ganti (dia, beliau, tersebut), akhiran -nya (“istrinya”), atau terlalu pendek sehingga topiknya harus diambil dari pertanyaan sebelumnya (“syaratnya?”)."));
+  w.append(tabel(["", ""], [
+    [el("th", "", "Topik sebelumnya"), td(j.topikSebelumnya ? `“${j.topikSebelumnya.subjek}” (jalur ${j.topikSebelumnya.jalur}; pertanyaan: “${j.topikSebelumnya.pertanyaan}”)` : "-")],
+    [el("th", "", "Keputusan"), td(j.lanjutan)],
+  ]));
+
+  w.append(h4("3. Peran setiap kata"));
+  w.append(awam("Tidak semua kata sama penting. Kata yang DITANYA dan NAMA DIRI wajib muncul di jawaban; kata pembingkai (syarat, lama, cara) hanya menunjukkan bentuk pertanyaan; kata tanya dan kata umum dibuang."));
+  w.append(tabel(["Kata", "Peran"], j.kata.map((k) => [td(k.kata), td(k.peran)])));
+  w.append(rumus(j.bentuk));
+
+  w.append(h4("4. Sumber yang paling mungkin"));
+  w.append(awam("Pertanyaan dicoba cepat ke indeks dokumen aturan dan Wikipedia lokal. Skor = cakupan kata × kekuatan kata (kata yang khas bernilai lebih). Skor ≥ 0,60 berarti sumber itu kemungkinan besar punya jawabannya, sehingga alatnya dicoba lebih dulu."));
+  w.append(tabel(["Sumber", "Potongan teratas", "Cakupan", "Kekuatan", "Skor"], j.probe.map((p) => [td(p.sumber), td(p.teratas ?? "-"), td(f2(p.cakupan), "num"), td(f2(p.kekuatan), "num"), td(f2(p.skor), "num")])));
+
+  w.append(h4("5. Urutan keputusan jenis pesan"));
+  w.append(awam("Pemeriksaan dilakukan berurutan; pemeriksaan pertama yang benar menentukan jenis pesan (baris tebal)."));
+  const t = tabel(["Pemeriksaan", "Hasil"], j.keputusan.map((k) => [td(k.cek, k.dipilih ? "pilih" : ""), tanda(k.hasil)]));
+  w.append(t);
+  return w;
+}
+
+function rincianAlat(d) {
+  const det = el("details", "rinci");
+  det.append(el("summary", "", `Lihat hasil alat “${d.alat}” secara rinci (${d.ms} ms)`));
+  const w = el("div");
+  w.append(tabel(["", ""], [
+    [el("th", "", "Kueri yang dikirim"), td(d.kueri)],
+    [el("th", "", "Jalur hasil"), td(`${d.jalur}${d.keyakinan ? `, keyakinan ${d.keyakinan}` : ""}${d.label ? ` — ${d.label}` : ""}`)],
+    [el("th", "", "Penilaian"), td(`skor ${d.skor} → ${d.cocok ? "cocok ✓" : "belum cocok ✗"}${d.alasan ? ` (${d.alasan})` : ""}`)],
+    ...(d.samaDengan ? [[el("th", "", "Catatan"), td(`hasilnya sama persis dengan alat “${d.samaDengan}”`)]] : []),
+  ]));
+  if (d.kurang?.length) { w.append(h4("Yang kurang")); w.append(tabel(["Jenis", "Rincian"], d.kurang.map((k) => [td(k.jenis), td(k.rincian)]))); }
+  if (d.perbaikan?.length) { w.append(h4("Perbaikan yang direncanakan")); w.append(tabel(["Alat", "Kueri", "Alasan"], d.perbaikan.map((p) => [td(p.alat), td(p.kueri || "(ditentukan saat dijalankan)"), td(p.pikir)]))); }
+  w.append(h4("Jawaban alat apa adanya (sebelum dinilai)"));
+  w.append(rumus(d.teks));
+  if (d.sumber?.length) { w.append(h4("Sumber yang dipakai alat")); w.append(tabel(["#", "Sumber"], d.sumber.map((s, i) => [td(String(i + 1), "num"), td(s)]))); }
+  if (d.kandidat?.length) {
+    w.append(h4("Kandidat pencarian (BM25)"));
+    w.append(tabel(["Potongan", "BM25", "Cakupan", "Kekuatan", "Cuplikan"], d.kandidat.map((k) => [td(k.sumber), td(f2(k.bm25), "num"), td(f2(k.cakupan), "num"), td(f2(k.kekuatan), "num"), td(k.cuplikan)])));
+  }
+  if (d.panggilan?.length) {
+    w.append(h4(`Permintaan HTTP ke internet (${d.panggilan.length})`));
+    w.append(awam("Inilah yang benar-benar dikirim ke server dan yang diterima kembali. Perintah curl di bawah bisa disalin dan dijalankan sendiri di terminal untuk mendapatkan respons yang sama. Respons asli berupa JSON dari API resmi (Wikipedia / DuckDuckGo / Brave); agent lalu mengambil judul dan teks halamannya. Kunci API (jika ada) disamarkan menjadi ***."));
+    d.panggilan.forEach((p, i) => {
+      const kotak = el("div", "http");
+      const status = p.galat ? `gagal: ${p.galat}` : `HTTP ${p.status}`;
+      kotak.append(el("div", "hasil", `#${i + 1} · ${status} · ${p.ms} ms · ${p.ukuran.toLocaleString("id-ID")} huruf · ${p.tipe || "-"}${p.dariCache ? " · dari cache (hasil permintaan sebelumnya, tidak dikirim ulang)" : ""}`));
+      const pre = el("pre", "kode", p.curl);
+      const salin = el("button", "kecil", "Salin curl"); salin.type = "button";
+      salin.onclick = () => navigator.clipboard.writeText(p.curl).then(() => { salin.textContent = "Tersalin ✓"; setTimeout(() => (salin.textContent = "Salin curl"), 1500); });
+      kotak.append(pre, salin);
+      const r = el("details");
+      r.append(el("summary", "", `Respons asli${p.dipotong ? ` (ditampilkan ${p.respons.length.toLocaleString("id-ID")} dari ${p.ukuran.toLocaleString("id-ID")} huruf)` : ""}`));
+      r.append(el("pre", "kode respons", p.respons || "(kosong)"));
+      kotak.append(r);
+      w.append(kotak);
+    });
+  }
+  if (d.halaman?.length) {
+    w.append(h4("Semua halaman internet yang diambil alat ini"));
+    w.append(tabel(["Judul", "Asal", "Panjang", "Cuplikan"], d.halaman.map((h) => { const a = el("a", "", h.judul); a.href = h.url; a.target = "_blank"; const c = el("td"); c.append(a); return [c, td(h.asal), td(`${h.panjang.toLocaleString("id-ID")} huruf`, "num"), td(h.cuplikan)]; })));
+  }
+  if (d.kalimat?.length) {
+    w.append(h4("Kalimat terbaik dari semua halaman terkumpul"));
+    w.append(awam("Setiap kalimat diberi skor BM25 mini terhadap pertanyaan. “Lolos” berarti memuat semua kata yang ditanya, nama diri, dan angka (untuk berapa/kapan)."));
+    w.append(tabel(["Skor", "Lolos", "Kata cocok", "Sumber", "Kalimat"], d.kalimat.map((k) => [td(f2(k.skor), "num"), tanda(k.lolos), td(k.cocok.join(", ")), td(k.sumber), td(k.teks)])));
+  }
+  if (d.proses?.length) { w.append(h4("Proses di dalam alat")); w.append(tabel(["Tahap", "Hasil"], d.proses.map((p) => [td(p.tahap), td(p.hasil)]))); }
+  det.append(w);
+  return det;
+}
+
+function rincianSimpulan(d) {
+  const det = el("details", "rinci");
+  det.open = true;
+  det.append(el("summary", "", "Kolam bukti dan cara menyimpulkan"));
+  const w = el("div");
+  if (!d.kolam) { w.append(awam(`Jawaban dari alat “${d.utama}” dipakai apa adanya karena hasilnya pasti (sapaan, pemahaman maksud, hitungan, atau tanya balik).`)); det.append(w); return det; }
+  w.append(awam("Semua yang ditemukan alat selama loop dikumpulkan jadi satu kolam: pasal aturan, potongan Wikipedia, catatan memori, dan semua halaman internet. Setiap kalimat dinilai terhadap maksud Anda, lalu kalimat terbaik yang lolos syarat dipakai untuk menyusun jawaban. Bobot sumber: pertanyaan aturan lebih percaya dokumen aturan, pertanyaan fakta lebih percaya ensiklopedia."));
+  if (d.kolam.penalaran) {
+    const p = d.kolam.penalaran;
+    w.append(h4(`Penalaran atas fakta: relasi “${p.relasi}” tentang ${p.nama}`));
+    w.append(awam("Pertanyaan seperti “di mana SEKARANG … bekerja?” jawabannya bisa berubah dari waktu ke waktu, dan informasinya tersebar di beberapa artikel. Jadi agent tidak mengutip satu kalimat, tetapi mengumpulkan semua FAKTA dari semua artikel (jabatan/tempat + kapan mulai + kapan selesai), lalu mengurutkannya menurut waktu. Fakta yang dimulai paling akhir dan belum berakhir = keadaan sekarang. Fakta yang hanya menyebut nama orang itu sebagai pihak lain (mis. “mendampingi …”) tidak dipakai."));
+    w.append(tabel(["Jabatan / tempat", "Waktu", "Mulai", "Selesai", "Berjalan", "Kalimat asal", "Sumber"], p.fakta.map((f) => [
+      td(f.nilai, f.nilai === p.terpilih ? "pilih" : ""), td(f.waktu || "-"), td(f.awal ?? "-", "num"), td(f.akhir ?? "-", "num"), tanda(f.berjalan), td(f.kalimat), td(f.sumber),
+    ])));
+    w.append(h4("Alasan kesimpulan"));
+    w.append(rumus(p.alasan.map((a) => "• " + a).join("\n")));
+  }
+  w.append(h4(`Dokumen di kolam bukti (${d.kolam.dokumen.length})`));
+  w.append(tabel(["Sumber", "Jenis", "Dari alat", "Bobot", "Panjang"], d.kolam.dokumen.map((x) => [td(x.label), td(x.jenis), td(x.dari), td(f2(x.bobot, 1), "num"), td(`${x.panjang.toLocaleString("id-ID")} huruf`, "num")])));
+  w.append(h4("Kalimat teratas di seluruh kolam"));
+  w.append(tabel(["Skor × bobot", "Lolos", "Kata cocok", "Jenis", "Kalimat"], d.kolam.kandidat.map((k) => [td(f2(k.skor), "num"), tanda(k.lolos), td(k.cocok.join(", ")), td(k.jenis), td(k.teks)])));
+  if (d.bukti?.length) {
+    w.append(h4("Kalimat yang dipakai di jawaban"));
+    w.append(tabel(["#", "Skor", "Jenis", "Kalimat", "Sumber"], d.bukti.map((b, i) => [td(String(i + 1), "num"), td(f2(b.skor), "num"), td(b.jenis), td(b.teks), td(b.label)])));
+  }
+  w.append(rumus(d.singkat ? `Jawaban singkat: "${d.singkat}" — diambil dengan ${d.caraSingkat}` : "Tanpa jawaban singkat (pertanyaan ini dijawab dengan kalimat buktinya)."));
+  det.append(w);
+  return det;
+}
+
+function blokKonteksPercakapan(x) {
+  const w = el("div");
+  w.append(awam("Pertanyaan pendek seperti “syaratnya?” atau “kalau yang itu?” biasanya melanjutkan topik sebelumnya. Bot mencari dua kali: tanpa konteks dan dengan konteks (pertanyaan sebelumnya, pertanyaan yang ditulis ulang, atau catatan memori Anda), lalu memakai hasil yang lebih kuat. Jadi jika Anda ganti topik, konteks lama tidak ikut tercampur."));
+  if (!x) return w;
+  w.append(tabel(["Pilihan", "Kueri", "Konteks tambahan", "Keyakinan", "Cakupan", "Kekuatan", "Pasal teratas", "Kalimat jawaban"], x.pilihan.map((p, i) => [
+    td(`${p.nama}${(i === 1) === x.menang ? " ← dipakai" : ""}`, (i === 1) === x.menang ? "pilih" : ""), td(p.kueri), td(p.konteks || "-"), td(p.keyakinan), td(f2(p.cakupan), "num"), td(f2(p.kekuatan), "num"), td(p.pasal), td(p.kalimat || "-"),
+  ])));
+  w.append(rumus(`Aturan pemilihan: berkonteks dipakai jika keyakinannya lebih tinggi, atau keyakinan sama tetapi cakupannya ≥ 10 poin lebih besar.\nAlasan dicoba: ${x.alasan}`));
   return w;
 }
 

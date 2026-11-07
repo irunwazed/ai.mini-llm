@@ -4,4 +4,5 @@ model-wiki/
 gpt-models/
 data/wiki-id*.txt
 data/memory.json
+data/reader-id.jsonl
 exports/

@@ -9,8 +9,10 @@ Proyek Bun + TypeScript: (1) chatbot aturan pemerintah berbasis pencarian, (2) G
 - `bun run test-gpt` — gradient check + overfit test untuk `src/gpt/`; wajib setiap mengubah forward/backward/optimizer/sampling GPT.
 - Eval chatbot (semua butuh `model/` hasil `bun run train` lebih dulu):
   - `bun run eval` — akurasi dari `evaluation/questions.jsonl`.
-  - `bun run eval-chat` — "nyambung" dari `evaluation/conversations.jsonl`; baseline sekarang 100% (58/58).
+  - `bun run eval-chat` — "nyambung" dari `evaluation/conversations.jsonl`; baseline sekarang 100% (74/74), juga dengan `-- --agent` dan `-- --rag`. Baris berisi `"agent": true` / `"rag": true` selalu diuji di mode itu (`rag` dilewati jika belum ada GPT pembaca).
   - `bun run eval-reasoning` — soal logika dari `evaluation/reasoning.jsonl`; baseline sekarang 42/42.
+  - `bun run eval -- --rag` — tambahan statistik GPT pembaca (berapa rentang lolos verifikasi & benar); akurasi utama tetap 90,5%.
+  - `bun run eval-reader` — EM/F1 GPT pembaca di data val (`data/reader-id.jsonl`, dibagi per artikel); baseline F1 76%.
   - Ketiganya menerima `-- --soal path/file.jsonl` untuk file uji lain. Satu pertanyaan: `bun run search -- "berapa hari cuti?"`.
 - Tidak ada lint, formatter, test runner (`bun test`), CI, atau pre-commit di repo ini — jangan mengarang perintah verifikasi lain.
 - Argumen CLI lewat `--`: `bun run train -- --dokumen path --tanpa-embedding`. Parser di `src/commands/args.ts`; folder bawaan dokumen `documents`, model `model`.
@@ -21,9 +23,11 @@ Proyek Bun + TypeScript: (1) chatbot aturan pemerintah berbasis pencarian, (2) G
 - Dua subsistem terpisah; perubahan di satu tidak memengaruhi yang lain:
   - **Chatbot retrieval**: `src/readers` (PDF/DOCX/TXT + cache) → `src/text` (bersih, potong per pasal, stemmer) → `src/training` (metadata, istilah, word2vec) → `src/search` (BM25 + RRF) → `src/answer` (susun jawaban + dasar hukum). State di `src/model.ts`.
   - **GPT dari nol**: `src/gpt/` (BPE, matriks, layer, Adam, sampling, checkpoint) — latih multi-worker via `SharedArrayBuffer`.
-- **Mode agent** (`src/agent/multi-mode.ts`, async) menjalankan semua mode `MesinChat.proses` lalu memilih skor tertinggi; jika < 0,6 (`AMBANG_PUAS`) mencari internet lewat `src/search/internet.ts` (hanya API resmi: Wikipedia, DuckDuckGo Instant Answer tanpa kunci — hanya definisi/entitas, bukan hasil web —, Brave opsional via `BRAVE_API_KEY`; jangan scrape mesin pencari, termasuk HTML DuckDuckGo). `bun run eval-chat -- --agent` menguji mode ini tanpa internet.
+- **GPT pembaca / RAG**: `GPTConfig.spanHead` menambah kepala span (`forwardSpan`, `langkahSpan`; backward bersama di `mundur`), `src/gpt/reader.ts` (baca rentang), `src/gpt/reader-data.ts` (data otomatis). Pipa: `bun run make-reader-data` → `bun run train-reader -- --from wiki --name reader` (checkpoint `mode: "pembaca"`, ambang di `meta.pembaca`). RAG di `src/rag/` (dialog = pertanyaan lanjutan/elipsis, retrieve = pasal dirujuk + memori, pipeline = baca + verifikasi); dipakai lewat mode `"rag"` / `OpsiProses.rag`. Loop konteks percakapan (cari asli vs berkonteks) di `MesinChat.proses` aktif di semua mode.
+- **Mode agent** (`src/agent/`, async): `intent.ts` (Niat) → `tools.ts` (alat = mode/sumber) → `compare.ts` (skor + kekurangan) → perbaikan di `multi-mode.ts` (maks 8 langkah) → `synthesize.ts` (kolam bukti dari SEMUA hasil, jawaban disusun agent sendiri; relasi berwaktu seperti "sekarang bekerja di mana" disimpulkan dari urutan waktu fakta oleh `reasoner.ts` + `relations.ts`). Internet lewat `src/search/internet.ts` (hanya API resmi: Wikipedia, DuckDuckGo Instant Answer tanpa kunci — hanya definisi/entitas, bukan hasil web —, Brave opsional via `BRAVE_API_KEY`; jangan scrape mesin pencari, termasuk HTML DuckDuckGo; host yang gagal TLS dicatat `hostTerblokir` dan dilewati 15 menit — DuckDuckGo diblokir ISP di Indonesia, itu normal). `bun run eval-chat -- --agent` menguji mode ini tanpa internet.
 - Entry point tiap script: `src/commands/*.ts` (lihat `package.json` `scripts`; kecuali `make-chat-data` → `src/gpt/chat-data.ts`, `lesson:*` → `lessons/`).
-- Artefak training di-gitignore, jangan di-commit: `model/` (termasuk cache per-file di `model/cache/`), `model-wiki/`, `gpt-models/`, `data/wiki-id*.txt`, `data/memory.json`, `exports/`.
+- Artefak training di-gitignore, jangan di-commit: `model/` (termasuk cache per-file di `model/cache/`), `model-wiki/`, `gpt-models/`, `data/wiki-id*.txt`, `data/memory.json`, `data/reader-id.jsonl`, `exports/`.
+  - `MesinChat` memuat GPT pembaca terbaru (`gptTerbaru("pembaca")`) otomatis; training pembaca baru dengan nama lain langsung dipakai begitu checkpoint pertama tersimpan.
   - `chat`/`search`/`eval*` gagal sampai `bun run train` pernah dijalankan; `model-wiki/` (hasil `bun run index-wiki`) dan `gpt-models/` opsional — tanpanya fitur terkait dilewati, bukan error.
   - Setiap dokumen ditambah/diubah → `bun run train` ulang (file tak berubah dibaca dari cache).
   - Jangan jalankan dua `train-gpt` dengan `--name` sama bersamaan (checkpoint saling menimpa).

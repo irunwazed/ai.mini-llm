@@ -28,14 +28,37 @@ export function kataPertanyaan(pertanyaan: string): string[] {
 /** Nama diri: kata berhuruf kapital (bukan kata pertama kalimat) yang bukan stopword. */
 export function namaDiri(pertanyaan: string): string[] {
   const hasil: string[] = [];
-  for (const m of pertanyaan.matchAll(/(?<=\s)[A-Z][\p{L}'-]+/gu)) {
+  // kata berhuruf kapital di tengah kalimat, ATAU di awal kalimat jika langsung diikuti kata berhuruf
+  // kapital lain ("Joko Widodo sekarang …"; "Cuti tahunan berapa?" tidak dianggap nama)
+  for (const m of pertanyaan.matchAll(/(?<=\s)[A-Z][\p{L}'-]+|^[A-Z][\p{L}'-]+(?=\s+[A-Z])/gu)) {
     const t = keTerm(m[0]).find((x) => !x.startsWith("~"));
     if (t && !hasil.includes(t)) hasil.push(t);
   }
   return hasil;
 }
 
-export function pilihKalimatWeb(pertanyaan: string, halaman: { teks: string; judul?: string }[], n = 2, syarat?: (k: KalimatWeb) => boolean): { kalimat: KalimatWeb[]; kata: string[]; jumlahKalimat: number } {
+/**
+ * Pemecah kalimat untuk teks umum (Wikipedia/internet): potong setelah . ! ? yang diikuti huruf kapital/angka,
+ * TIDAK di titik koma (beda dengan naskah hukum) dan tidak setelah singkatan pendek ("Ir.", "Dr.", "H.C.").
+ * Dokumen aturan tetap memakai pecahKalimat (paham ayat dan huruf).
+ */
+export function pecahUmum(teks: string): string[] {
+  const hasil: string[] = [];
+  for (const par of teks.split(/\n+/)) {
+    let awal = 0;
+    for (const m of par.matchAll(/[.!?]["”')]?\s+(?=["“(]?[\p{Lu}\d])/gu)) {
+      const sebelum = par.slice(awal, m.index! + 1);
+      const kataAkhir = sebelum.match(/(\S+)$/)?.[1] ?? "";
+      if (/^(\p{Lu}[\p{L}]{0,2}\.|(\p{L}\.){2,}|[A-Z]\.)$/u.test(kataAkhir)) continue; // singkatan
+      hasil.push(par.slice(awal, m.index! + m[0].trimEnd().length).trim());
+      awal = m.index! + m[0].length;
+    }
+    if (par.slice(awal).trim()) hasil.push(par.slice(awal).trim());
+  }
+  return hasil.filter((s) => s.split(" ").length >= 4);
+}
+
+export function pilihKalimatWeb(pertanyaan: string, halaman: { teks: string; judul?: string; aturan?: boolean }[], n = 2, syarat?: (k: KalimatWeb) => boolean, tanpaBatas = false): { kalimat: KalimatWeb[]; kata: string[]; jumlahKalimat: number } {
   const kata = kataPertanyaan(pertanyaan);
   const wajib = namaDiri(pertanyaan);
   const kataSet = new Set(keTerm(pertanyaan));
@@ -48,9 +71,9 @@ export function pilihKalimatWeb(pertanyaan: string, halaman: { teks: string; jud
   const jenis = jenisPertanyaan(pertanyaan);
   const semua: { teks: string; halaman: number; urutan: number; term: Set<string> }[] = [];
   halaman.forEach((h, i) =>
-    pecahKalimat(h.teks.replace(/\n+/g, ". ").replace(/\.\s*\./g, "."))
-      .filter((k) => k.teks.length >= 25 && k.teks.length <= 450)
-      .forEach((k, urutan) => semua.push({ teks: k.teks, halaman: i, urutan, term: new Set(keTerm(k.teks)) })));
+    (h.aturan ? pecahKalimat(h.teks).map((k) => k.teks) : pecahUmum(h.teks))
+      .filter((k) => k.length >= 25 && k.length <= 450)
+      .forEach((teks, urutan) => semua.push({ teks, halaman: i, urutan, term: new Set(keTerm(teks)) })));
   if (!kata.length || !semua.length) return { kalimat: [], kata, jumlahKalimat: semua.length };
 
   const N = semua.length;
@@ -82,7 +105,7 @@ export function pilihKalimatWeb(pertanyaan: string, halaman: { teks: string; jud
   const pilih: KalimatWeb[] = [];
   for (const k of lolos.length ? lolos : nilai) {
     if (pilih.length >= n) break;
-    if (pilih.length && k.skor < 0.8 * pilih[0].skor) break; // kalimat kedua hanya jika hampir sama kuat
+    if (!tanpaBatas && pilih.length && k.skor < 0.8 * pilih[0].skor) break; // kalimat kedua hanya jika hampir sama kuat
     if (!pilih.some((p) => p.teks === k.teks)) pilih.push(k);
   }
   return { kalimat: pilih, kata, jumlahKalimat: N };

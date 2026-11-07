@@ -32,10 +32,12 @@ export function jenisPertanyaan(q: string): Jenis {
 export function satuanDiminta(q: string): RegExp | null {
   const t = q.toLowerCase();
   if (/berapa\s+(hari|lama)/.test(t)) return /hari|bulan|tahun|minggu/;
+  if (/berapa\s+(tinggi|panjang|jarak|jauh|luas|dalam|lebar|berat)/.test(t)) return /\b(m|meter|mdpl|km|kilometer|cm|mm|kg|kilogram|ton|gram|ha|hektare|km2|km²|mil)\b/;
   if (/berapa\s+(bulan)/.test(t)) return /bulan/;
   if (/berapa\s+(tahun)/.test(t)) return /tahun/;
   if (/berapa\s+(jam|menit)/.test(t)) return /jam|menit/;
-  if (/(uang|biaya|harga|nilai|tarif|besar|rupiah|gaji|tunjangan)/.test(t)) return /rp|persen|%/i;
+  // "besar" hanya jika ditanya "berapa besar"/"besarnya" (bukan "cuti besar")
+  if (/(uang|biaya|harga|nilai|tarif|berapa besar|besarnya|rupiah|gaji|tunjangan)/.test(t)) return /rp|persen|%/i;
   if (/(persen|potongan|denda)/.test(t)) return /%|persen|permil|\//;
   if (/(liter|bensin|bahan bakar)/.test(t)) return /liter/;
   return null;

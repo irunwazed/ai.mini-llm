@@ -11,6 +11,7 @@
  * Jika gagal, mesin percakapan mencoba jalur berikutnya (loop "hasilkan -> periksa -> coba lagi").
  */
 import type { Jawaban } from "../answer/compose.js";
+import { besaran, satuanDiminta } from "../answer/question-type.js";
 import { keTerm } from "../text/normalize.js";
 
 export interface HasilPeriksa { lolos: boolean; alasan: string[] }
@@ -21,7 +22,10 @@ export function periksaJawaban(j: Jawaban): HasilPeriksa {
   const pertama = j.utama[0] ?? "";
   if (!utama.trim()) return { lolos: false, alasan: ["jawaban kosong"] };
 
+  const satuan = satuanDiminta(j.pertanyaan);
   if (j.jenis === "jumlah" && !/\d/.test(utama)) alasan.push(`ditanya "berapa", tetapi jawaban tidak memuat angka`);
+  else if (j.jenis === "jumlah" && satuan && !besaran(utama).some((b) => satuan.test(b.toLowerCase())))
+    alasan.push(`ditanya "berapa", tetapi jawaban tidak memuat satuan yang diminta (mis. "tahun 1973" bukan lama waktu)`);
   if (j.jenis === "definisi" && !/\b(adalah|merupakan|ialah|yaitu|yakni)\b/i.test(pertama))
     alasan.push(`ditanya definisi, tetapi kalimat utama bukan kalimat "… adalah …"`);
   if (j.jenis === "yaTidak" && !/^(ya|tidak|boleh)\b/i.test(pertama) && !/\b(dilarang|wajib|boleh|dapat|berhak|harus)\b/i.test(utama))

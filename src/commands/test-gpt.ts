@@ -5,9 +5,10 @@
  *      numerik  = ( L(θ+ε) − L(θ−ε) ) / 2ε
  *      analitik = hasil backward
  *      galat relatif = |a − n| / (|a| + |n|)   harus < 1e-5
- *    Diuji untuk post-LN (sesuai gambar) dan pre-LN.
+ *    Diuji untuk post-LN (sesuai gambar) dan pre-LN, juga kepala GPT pembaca (span awal/akhir).
  * 2. Uji overfit: model harus bisa menghafal satu kalimat (loss -> hampir 0).
  *    Jika gagal, ada yang salah di forward/backward/optimizer.
+ * 3. Uji overfit pembaca: model harus bisa belajar menunjuk rentang jawaban di satu contoh.
  *
  * Pakai:  bun run test-gpt
  */
@@ -19,8 +20,8 @@ import { sampel } from "../gpt/sampling.js";
 
 let gagal = 0;
 
-function gradientCheck(preLN: boolean, dropout = false, masking = false) {
-  const c: GPTConfig = { vocab: 13, context: 7, dim: 8, heads: 2, layers: 2, ff: 16, preLN };
+function gradientCheck(preLN: boolean, dropout = false, masking = false, span = false) {
+  const c: GPTConfig = { vocab: 13, context: 7, dim: 8, heads: 2, layers: 2, ff: 16, preLN, spanHead: span };
   const m = new GPT(c, undefined, 7);
   const rng = new Rng(3);
   const T = 6;
@@ -29,9 +30,11 @@ function gradientCheck(preLN: boolean, dropout = false, masking = false) {
   const target = Array.from({ length: T }, (_, t) => (masking && t % 2 === 0 ? -1 : rng.int(c.vocab)));
   const G = new Float64Array(m.ukuran);
   if (dropout) m.aturDropout(0.3, new Rng(9).next); // buat mask acak sekali...
-  m.langkah(ids, target, G, 1 / T);
+  // span: posisi 0–1 = pertanyaan, 2 = <|bot|> ("tidak ada jawaban"), jawaban = token 3..5
+  const hitung = (g: Float64Array | null, skala: number) => (span ? m.langkahSpan(ids, 3, 5, 2, g, skala) : m.langkah(ids, target, g, skala));
+  hitung(G, 1 / T);
   if (dropout) m.aturDropout(0.3, undefined, true); // ...lalu bekukan agar L(θ±ε) memakai mask yang sama
-  const lossRata = () => m.langkah(ids, target, null, 1) / T;
+  const lossRata = () => hitung(null, 1) / T;
 
   let terburuk = 0, namaTerburuk = "";
   for (const [nama, t] of m.tensors()) {
@@ -50,7 +53,7 @@ function gradientCheck(preLN: boolean, dropout = false, masking = false) {
   }
   const ok = terburuk < 1e-5;
   if (!ok) gagal++;
-  const label = `${preLN ? "pre-LN " : "post-LN"}${dropout ? " + dropout" : ""}${masking ? " + masking" : ""}`;
+  const label = `${preLN ? "pre-LN " : "post-LN"}${dropout ? " + dropout" : ""}${masking ? " + masking" : ""}${span ? " + pembaca" : ""}`;
   console.log(`  ${label.padEnd(28)}: galat relatif terburuk = ${terburuk.toExponential(2)} (${namaTerburuk})  ${ok ? "LULUS" : "GAGAL"}`);
 }
 
@@ -84,14 +87,33 @@ function ujiOverfit(preLN: boolean) {
   if (teks !== kalimat) console.log(`     hasil: "${teks}"`);
 }
 
+function ujiOverfitPembaca() {
+  const c: GPTConfig = { vocab: 20, context: 16, dim: 32, heads: 4, layers: 2, ff: 64, preLN: false, spanHead: true };
+  const m = new GPT(c, undefined, 2);
+  const G = new Float64Array(m.ukuran);
+  const opt = new Adam(m, { lr: 3e-3, weightDecay: 0 });
+  const ids = [1, 2, 3, 0, 5, 6, 7, 8, 9, 10, 11, 12]; // 0 = <|bot|> di posisi 3
+  let loss = 0;
+  for (let s = 1; s <= 200; s++) { G.fill(0); loss = m.langkahSpan(ids, 6, 8, 3, G, 1); opt.langkah(G, s); }
+  const Z = m.forwardSpan(ids);
+  const argmaks = (kol: number) => { let b = 3; for (let t = 3; t < ids.length; t++) if (Z[t * 2 + kol] > Z[b * 2 + kol]) b = t; return b; };
+  const ok = loss < 0.05 && argmaks(0) === 6 && argmaks(1) === 8;
+  if (!ok) gagal++;
+  console.log(`  pembaca: loss akhir = ${loss.toFixed(4)}, rentang = ${argmaks(0)}..${argmaks(1)} (target 6..8)  ${ok ? "LULUS" : "GAGAL"}`);
+}
+
 console.log("1. Gradient check (setiap tensor, Float64):");
 gradientCheck(false);
 gradientCheck(true);
 gradientCheck(false, true);
 gradientCheck(true, true);
 gradientCheck(false, false, true);
+gradientCheck(false, false, false, true);
+gradientCheck(true, true, false, true);
 console.log("2. Uji overfit satu kalimat (300 langkah Adam):");
 ujiOverfit(false);
 ujiOverfit(true);
+console.log("3. Uji overfit GPT pembaca (200 langkah Adam):");
+ujiOverfitPembaca();
 console.log(gagal ? `\n${gagal} uji GAGAL` : "\nSemua uji LULUS");
 process.exit(gagal ? 1 : 0);

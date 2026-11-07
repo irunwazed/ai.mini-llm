@@ -24,7 +24,10 @@
     "index-wiki": "bun src/commands/index-wiki.ts",
     "web": "bun src/commands/web.ts",
     "eval-chat": "bun src/commands/eval-chat.ts",
-    "eval-reasoning": "bun src/commands/eval-reasoning.ts"
+    "eval-reasoning": "bun src/commands/eval-reasoning.ts",
+    "make-reader-data": "bun src/commands/make-reader-data.ts",
+    "train-reader": "bun src/commands/train-reader.ts",
+    "eval-reader": "bun src/commands/eval-reader.ts"
   },
   "dependencies": {
     "mammoth": "^1.13.0",

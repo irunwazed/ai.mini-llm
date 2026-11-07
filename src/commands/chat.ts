@@ -13,6 +13,7 @@
  *   :gpt teks     lanjutkan teks dengan model GPT pretrain (opsi --gpt <nama>)
  *   :proses       nyalakan/matikan tampilan proses
  *   :agent        nyalakan/matikan mode agent (coba semua mode, cari di internet bila perlu)
+ *   :rag          nyalakan/matikan RAG (GPT pembaca + pasal dirujuk + konteks memori); juga --rag
  *   :export       ekspor percakapan ke teks (untuk disalin) dan file exports/chat-*.md
  *   :baru         mulai percakapan baru (riwayat dihapus, memori tetap)
  *   :bantuan      daftar perintah          :keluar   berhenti
@@ -31,6 +32,7 @@ const { folderModel, k, opsi } = argumen();
 const mesin = new MesinChat({ folderModel, folderWiki: opsi.wiki, chatGpt: opsi["chat-gpt"], k, fileMemori: opsi.memori });
 let tampilProses = opsi.proses === "true";
 let modeAgent = opsi.agent === "true";
+let modeRag = opsi.rag === "true";
 const internet = opsi["tanpa-internet"] !== "true";
 
 const BANTUAN = [
@@ -41,6 +43,7 @@ const BANTUAN = [
   "  :gpt teks     lanjutkan teks dengan model GPT pretrain (karangan model)",
   "  :proses       tampilkan/sembunyikan cara kerja",
   "  :agent        mode agent: coba semua mode, pilih yang paling cocok, cari di internet bila perlu",
+  "  :rag          RAG: GPT pembaca menunjuk jawaban di konteks (pasal dirujuk + catatan memori ikut dibaca)",
   "  :export       ekspor percakapan (teks untuk disalin + file di exports/)",
   "  :baru         mulai percakapan baru (memori tetap tersimpan)",
   "  :keluar       berhenti",
@@ -71,6 +74,15 @@ function cetakProses(r: Respons) {
   for (const l of r.proses) {
     console.log(`     • ${l.tahap}: ${l.hasil}${l.ms >= 1 ? ` (${l.ms.toFixed(0)} ms)` : ""}`);
     const d = l.data as { langkah?: { pikir: string; aksi: string; hasil: string; cek: string }[]; percobaan?: { suhu: number; teks: string; niat: string | null; diterima: boolean }[] } | undefined;
+    const db = l.data as { dibaca?: { label: string; keyakinan: number; jawaban: string }[] } | undefined;
+    const dn = l.data as { niat?: { kueri: string; jejak?: { lanjutan: string; kata: { kata: string; peran: string }[]; probe: { sumber: string; skor: number }[] } } } | undefined;
+    if (l.tahap === "Agent: pahami maksud" && dn?.niat?.jejak) {
+      const j = dn.niat.jejak;
+      console.log(`       konteks : ${j.lanjutan}`);
+      console.log(`       kata    : ${j.kata.map((k) => `${k.kata} (${k.peran.split(" (")[0]})`).join(", ")}`);
+      console.log(`       sumber  : ${j.probe.map((p) => `${p.sumber} ${p.skor.toFixed(2)}`).join(" | ")}`);
+    }
+    if (l.tahap.startsWith("GPT pembaca") && db?.dibaca) db.dibaca.forEach((x) => console.log(`       - ${x.label}: "${x.jawaban}" (${(100 * x.keyakinan).toFixed(0)}%)`));
     if ((l.tahap === "Agent penalaran" || l.tahap === "Agent multi-mode") && d?.langkah) {
       d.langkah.forEach((a, i) => console.log(`       ${i + 1}. Pikir: ${a.pikir}\n          Aksi : ${a.aksi}\n          Hasil: ${a.hasil}\n          Cek  : ${a.cek}`));
     }
@@ -85,6 +97,10 @@ function cetakProses(r: Respons) {
 function perintah(masukan: string): boolean {
   if (masukan === ":bantuan") { console.log(BANTUAN + "\n"); return true; }
   if (masukan === ":baru") { topik = null; riwayat.length = 0; console.log("Percakapan baru dimulai (memori tetap tersimpan).\n"); return true; }
+  if (masukan === ":rag") {
+    if (!mesin.pembaca) { console.log("Belum ada GPT pembaca. Latih dulu: bun run make-reader-data && bun run train-reader\n"); return true; }
+    modeRag = !modeRag; console.log(`RAG ${modeRag ? `dinyalakan (pembaca "${mesin.pembaca.nama}")` : "dimatikan"}.\n`); return true;
+  }
   if (masukan === ":agent") { modeAgent = !modeAgent; console.log(`Mode agent ${modeAgent ? `dinyalakan${internet ? " (boleh mencari di internet)" : " (tanpa internet)"}` : "dimatikan"}.
 `); return true; }
   if (masukan === ":proses") { tampilProses = !tampilProses; console.log(`Tampilan proses ${tampilProses ? "dinyalakan" : "dimatikan"}.\n`); return true; }
@@ -142,7 +158,7 @@ rl.on("line", async (baris) => {
 
   const t0 = performance.now();
   sibuk = true;
-  const r = modeAgent ? await jalankanModeAgent(mesin, masukan, { riwayat, topik, internet }) : mesin.proses(masukan, { riwayat, topik });
+  const r = modeAgent ? await jalankanModeAgent(mesin, masukan, { riwayat, topik, internet, rag: modeRag }) : mesin.proses(masukan, { riwayat, topik, rag: modeRag });
   sibuk = false;
   log.push(keEntriEkspor(masukan, { ...r, totalMs: performance.now() - t0 }));
   terakhir = r;

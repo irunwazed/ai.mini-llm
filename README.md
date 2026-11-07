@@ -27,8 +27,12 @@ llm/
     ├── text/           pembersih header/OCR, tokenisasi, stemmer, sinonim, pemotong pasal
     ├── training/       metadata & perubahan aturan, glosarium & singkatan, word2vec
     ├── search/         BM25 + pencarian hibrida
-    ├── answer/         jenis pertanyaan, pemecah kalimat, penyusun jawaban
-    ├── gpt/            GPT dari nol: bpe, layers, model, optimizer, sampling, worker, dataset, checkpoint
+    ├── answer/         jenis pertanyaan, pemecah kalimat, penyusun jawaban, pengutip kalimat internet
+    ├── gpt/            GPT dari nol: bpe, layers, model, optimizer, sampling, worker, dataset, checkpoint,
+    │                   reader (GPT pembaca) + reader-data (data latih pembaca otomatis)
+    ├── rag/            RAG: konteks percakapan (dialog), ambil konteks (retrieve), baca + verifikasi (pipeline)
+    ├── agent/          mode agent: semua mode + pencarian internet
+    ├── reasoning/      agent penalaran (kalkulator, kalender, barisan, …) + pemeriksa relevansi
     ├── model.ts        simpan / muat model chatbot
     └── commands/       train, search, chat, eval, train-gpt, generate, test-gpt
 ```
@@ -54,6 +58,10 @@ bun install
 | Ukur akurasi jawaban aturan | `bun run eval` |
 | Uji percakapan "nyambung" | `bun run eval-chat` |
 | Uji percakapan lewat mode agent (tanpa internet) | `bun run eval-chat -- --agent` |
+| Chatbot dengan RAG (GPT pembaca) | `bun run chat -- --rag` (atau ketik `:rag`) |
+| Ukur akurasi + RAG (berapa jawaban pembaca diterima & benar) | `bun run eval -- --rag` |
+| Uji percakapan lewat mode RAG | `bun run eval-chat -- --rag` |
+| Uji GPT pembaca (EM/F1 di artikel val) | `bun run eval-reader` |
 | Uji soal logika & matematika | `bun run eval-reasoning` |
 
 **GPT, alur lengkap seperti ChatGPT (dalam versi mini)**
@@ -69,6 +77,10 @@ bun run chat-gpt                                                         # 5. ng
 bun run index-wiki                                                       # 6. indeks Wikipedia untuk pertanyaan fakta
 bun run chat                                                             # 7. chatbot lengkap: aturan + fakta + obrolan
 bun run web                                                              # 8. versi web + panel "cara kerja" -> http://localhost:3000
+bun run make-reader-data                                                 # 9. data latih GPT pembaca (otomatis dari Wikipedia)
+bun run train-reader -- --from wiki --name reader --steps 2400           # 10. latih GPT pembaca untuk RAG (±50 menit)
+bun run eval-reader                                                      #     EM / F1 / tolak benar di artikel val
+bun run chat -- --rag                                                    # 11. chatbot dengan RAG (atau mode "RAG" di web)
 ```
 
 **Penting saat training:**
@@ -136,7 +148,7 @@ Setiap jawaban diperiksa dulu sebelum ditampilkan (`src/reasoning/critic.ts`). J
 - **Pertanyaan ambigu dijawab dengan tanya balik.** Contohnya "berapa lama cutinya?" ketika ada beberapa jenis cuti yang sama kuat.
 - **Jika tetap tidak ada yang lolos, bot menjawab jujur** "Maaf, saya belum mengerti…" dan tidak mengarang.
 
-Loop ini tidak bisa menjamin 100%, karena pemeriksanya juga aturan perkiraan. Tetapi kesalahan yang terdeteksi diperbaiki otomatis, dan hasilnya terukur dengan `bun run eval-chat`: 86,3% sebelum loop, 100% (58/58 giliran) sesudahnya.
+Loop ini tidak bisa menjamin 100%, karena pemeriksanya juga aturan perkiraan. Tetapi kesalahan yang terdeteksi diperbaiki otomatis, dan hasilnya terukur dengan `bun run eval-chat`: 86,3% sebelum loop, 100% sesudahnya (sekarang 74/74 giliran, termasuk percakapan lanjutan, RAG, dan agent).
 
 ### Agent penalaran (Pikir → Aksi → Hasil → Cek)
 
@@ -167,57 +179,150 @@ Batasan yang perlu diketahui:
 - **Bank teka-teki adalah pencarian, bukan penalaran.** Teka-teki jebakan dan paradoks dikenali dari pola kalimat, lalu dijawab dengan penjelasan yang sudah ditulis. Panel cara kerja memberi label "teka-teki dikenal". Soal yang bentuknya jauh berbeda belum tentu dikenali.
 - **Alat hitung benar-benar menghitung.** Kategori "variasi angka" di `evaluation/reasoning.jsonl` mengganti angka dan nama soal untuk mengujinya. Hasil saat ini 42/42: 25 soal asli dan 17 variasi.
 
-### Mode agent (semua mode + pencarian internet)
+### Mode agent (loop: pahami → alat → bandingkan → perbaiki → simpulkan)
 
-Pilih **Agent (semua mode + internet)** di menu Mode web, atau jalankan `bun run chat -- --agent`. Kodenya ada di `src/agent/multi-mode.ts`. Tidak ada layanan AI luar.
+Pilih **Agent (semua mode + internet)** di web, atau jalankan `bun run chat -- --agent` (atau ketik `:agent`). Kodenya ada di `src/agent/`. Tidak ada layanan AI luar.
 
-**Putaran 1: semua mode lokal dicoba.** Mode yang dicoba: otomatis, penalaran, dokumen aturan, Wikipedia lokal, dan GPT. GPT dilewati untuk pertanyaan fakta. Setiap hasil diberi skor 0–1:
+```
+1. PAHAMI MAKSUD  intent.ts      jenis pesan (obrolan, aturan, fakta, pribadi, hitung), bentuk jawaban yang dicari
+                                 (angka+satuan, tanggal, nama, tempat, definisi, daftar), kata kunci, nama diri,
+                                 subjek percakapan sebelumnya, sumber paling mungkin
+2. PAKAI ALAT     tools.ts       otomatis · aturan · rag · Wikipedia lokal · memori · GPT obrolan · penalaran
+                                 · Wikipedia internet (subjek / kata kunci / artikel lengkap) · DuckDuckGo · Brave
+3. BANDINGKAN     compare.ts     hasil vs maksud -> skor + daftar KEKURANGAN
+4. PERBAIKI       multi-mode.ts  kekurangan -> aksi baru di depan antrian; ulangi 2–4 (maks 8 langkah / 20 detik)
+5. SIMPULKAN      synthesize.ts  semua hasil -> kolam bukti -> jawaban disusun agent sendiri
+```
 
-| Hasil | Skor |
-|---|---|
-| pola maksud ("siapa aku?"), permintaan detail | 1,0 |
-| agent penalaran (lolos cek ulang) | 0,95 |
-| memori | 0,85 |
-| GPT untuk sapaan/obrolan | 0,8 |
-| dokumen aturan / Wikipedia / internet | keyakinan × (0,2 + 0,8 × cakupan²) |
-| tanya balik (pertanyaan ambigu) | 0,55 |
-| jujur "tidak tahu" | 0,3 |
-| GPT untuk pertanyaan fakta | 0,2 |
+| Kekurangan yang terdeteksi | Contoh | Perbaikan otomatis |
+|---|---|---|
+| nama diri tidak disebut | "kapan Soekarno lahir?" dijawab tentang Romy Soekarno | cari artikel subjeknya, lalu baca artikel lengkap |
+| bentuk jawaban salah | "berapa tinggi Rinjani?" dijawab "berdiri tahun 1996" (bukan satuan tinggi) | baca artikel lengkap / sumber lain |
+| kata yang ditanya hilang | "lahir" tidak ada di kalimat | coba padanan katanya, lalu cari di internet |
+| sumber tidak sesuai | pertanyaan aturan dijawab Wikipedia; fakta dijawab GPT | ganti ke sumber yang sesuai |
+| ambigu | "berapa lama cutinya?" | berhenti, tanya balik |
 
-Cakupan adalah bagian kata pertanyaan yang ada di jawaban. Skor jawaban pencarian dikurangi dalam tiga keadaan:
+**Kesimpulan disusun agent, bukan diteruskan dari mode lain.** Semua yang terkumpul selama loop masuk ke satu kolam bukti: pasal aturan, potongan Wikipedia, catatan memori, dan **semua** halaman internet yang terambil. Setiap kalimat dinilai terhadap maksud pengguna: BM25 mini, semua kata yang ditanya harus ada, nama diri harus ada, "berapa/kapan" harus berangka, judul sumber yang cocok diutamakan, dan sumber yang sesuai jenis pertanyaan diberi bobot lebih. Dari situ agent menulis:
 
-- pertanyaan "berapa" dijawab tanpa angka atau tanpa satuan yang diminta;
-- pertanyaan "kapan" dijawab tanpa tanggal;
-- pesannya sebenarnya obrolan ("halo", "aku bosan").
+1. jawaban singkat sesuai bentuk yang ditanya ("3 bulan", "6 Juni 1901", "Andrea Hirata", "38 provinsi"), diambil dengan pola bentuk jawaban atau GPT pembaca; untuk beberapa angka dalam satu kalimat, dipilih yang paling dekat dengan kata yang ditanya;
+2. kalimat bukti terbaik dari beberapa sumber, bernomor [n];
+3. daftar sumber, catatan "bukan dasar hukum" untuk internet, dan jejak alat (`otomatis ✗ → wiki-subjek ✗ → wiki-artikel "Soekarno" ✓`).
 
-**Putaran 2+: pencarian internet.** Ini hanya terjadi jika skor terbaik di bawah 0,6 dan pesannya pertanyaan. Strateginya diulang sampai ada kalimat yang lolos cek:
+Sapaan, pemahaman maksud, hitungan, dan tanya balik tetap memakai jawaban alatnya sendiri. Jika tidak ada kalimat yang cukup cocok, agent mengatakan "belum menemukan jawaban yang benar-benar cocok", menampilkan yang paling mendekati, lalu mengajukan pertanyaan balik yang spesifik.
 
-1. Jika ada nama diri ("Soekarno", "Rinjani"), cari artikel subjeknya di Wikipedia, lalu baca artikel lengkapnya. Contohnya "Jakarta", yang dialihkan ke "Daerah Khusus Ibukota Jakarta".
-2. Cari Wikipedia dengan semua kata kunci.
-3. DuckDuckGo Instant Answer (API resmi, gratis, tanpa kunci): definisi/entitas saja — untuk pertanyaan biasa hasilnya sering kosong, dan Abstract biasanya bersumber Wikipedia, jadi ini pelengkap, bukan pengganti.
-4. Opsional: Brave Search API.
+**Penalaran atas fakta (`src/agent/reasoner.ts`, `src/agent/relations.ts`).** Ada pertanyaan yang jawabannya berubah dari waktu ke waktu, misalnya "di mana sekarang zudan bekerja?" atau "apa jabatan X sekarang?". Informasinya juga tersebar di beberapa artikel. Untuk pertanyaan seperti ini, agent tidak mengutip satu kalimat:
 
-Kalimat halaman dinilai dengan BM25 mini (`src/answer/web-extract.ts`), lalu dikutip apa adanya beserta tautannya. Sebuah kalimat lolos cek jika memenuhi tiga syarat:
+1. **Relasi.** Kata "bekerja" juga terpenuhi oleh *menjabat, dijabat oleh, ditunjuk sebagai, Kepala …*. Kata "sekarang/kini/saat ini" adalah petunjuk waktu, bukan kata yang wajib ada di kalimat.
+2. **Kumpulkan dulu.** Agent tidak berhenti pada hasil pertama yang cocok. Ia membaca artikel subjek, artikel lengkapnya, dan artikel lain yang menyebut nama itu (misalnya artikel lembaga tempat orang itu bekerja). Nama yang diketik huruf kecil ("zudan") dikenali karena tidak ada di kosakata indeks lokal.
+3. **Fakta + waktu.** Dari setiap kalimat diambil jabatan/tempat, tahun mulai, tahun selesai, dan apakah masih berjalan ("sejak 7 Januari 2025"). Fakta hanya dipakai jika orang itu PEMEGANG jabatannya. Kalimat seperti "… mendampingi Menteri Keuangan Sri Mulyani" atau "dikenal sebagai Jokowi" tidak dihitung. Fakta yang sama dari beberapa artikel digabung dan semua sumbernya dicatat.
+4. **Simpulkan menurut waktu.** Fakta yang dimulai paling akhir dan belum berakhir dianggap keadaan sekarang. Jabatan "sejak 1998" tanpa tanggal selesai dianggap sudah lewat jika ada jabatan lain yang dimulai sesudahnya. Jika tidak ada yang masih berjalan, agent menulis "yang paling akhir tercatat …".
+5. **Jawaban.** Isinya kesimpulan, alasan (mengapa fakta lain tidak dipakai), dan riwayat urut waktu dengan nomor sumber.
 
-- semua kata kunci ada (jika kata kuncinya ≤ 3), atau ≥ 70% kata kunci (jika lebih);
-- nama diri ada;
-- untuk "berapa/kapan", kalimat memuat angka.
+```
+Saat ini Zudan Arif Fakrulloh bekerja sebagai Kepala Badan Kepegawaian Negara (BKN) (sejak 7 Januari 2025). [1][2][3]
+Alasan kesimpulan:
+• Ditemukan 8 fakta "pekerjaan" tentang Zudan Arif Fakrulloh di 2 sumber.
+• "Sekretaris Badan Nasional Pengelola Perbatasan" sudah berakhir (Maret 2023 – Januari 2025).
+• "Direktur Jenderal Kependudukan dan Pencatatan Sipil" sudah berakhir (1 Juli 2015 – 15 Maret 2023). …
+Riwayat yang ditemukan (urut waktu):
+• Tahun 2008 – 2011: Kepala Bagian Penyusunan Rancangan Peraturan Perundang-Undangan Biro Hukum [3]
+• … • sejak 7 Januari 2025: Kepala Badan Kepegawaian Negara (BKN) [1][2][3]  ← keadaan terkini
+```
 
-**Pemilihan akhir.** Kandidat berskor tertinggi dipilih. Semua langkah (Pikir/Aksi/Hasil/Cek) dan tabel skor kandidat tampil di panel cara kerja.
+Batasannya: fakta diambil dengan pola kalimat ("sebagai …", "dijabat oleh …", "sejak …", "… hingga …"), jadi kalimat yang ditulis dengan cara lain bisa terlewat. Hasilnya juga hanya sebaru artikel Wikipedia-nya. Relasi yang dikenal: pekerjaan, tempat tinggal, kelahiran, kematian, pasangan, pendidikan. Tambahkan relasi lain di `RELASI`.
 
-Contoh hasil:
+Contoh hasil (dengan internet):
 
-- "kapan Soekarno lahir?" → "Soekarno dilahirkan di Surabaya, pada tanggal 6 Juni 1901 …"
-- "berapa jumlah provinsi di Indonesia?" → "Indonesia terdiri atas 38 provinsi …"
-- "siapa penulis Laskar Pelangi?" → "… novel yang ditulis Andrea Hirata."
+| Pertanyaan | Jawaban agent | Jalan yang ditempuh |
+|---|---|---|
+| berapa lama cuti tahunan? | **12 hari kerja** | dokumen aturan (penyusun biasa menjawab 6 hari, padahal itu batas penangguhan) |
+| berapa lama cuti besar? → syaratnya? | **3 bulan** → bekerja paling singkat 5 tahun | aturan; elipsis ditulis ulang |
+| kapan Soekarno lahir? → siapa istrinya? | **6 Juni 1901** → Ratna Sari Dewi Soekarno, dkk. | artikel subjek → artikel lengkap; subjek dibawa ke pertanyaan lanjutan |
+| berapa tinggi gunung Rinjani? | **3.726 mdpl** | 5 alat; "Universitas Gunung Rinjani … 1996" ditolak karena tanpa satuan |
+| berapa jumlah provinsi di Indonesia? | **38 provinsi** | Wikipedia internet |
 
 Yang perlu diketahui:
 
-- **Internet hanya lewat API resmi.** Yang dipakai bawaan adalah API Wikipedia dan API DuckDuckGo Instant Answer: keduanya gratis, tanpa kunci. Halaman hasil mesin pencari (Google, DuckDuckGo, Bing) tidak di-scrape — termasuk halaman HTML DuckDuckGo, karena melanggar ketentuan layanan mereka dan diblokir pemeriksaan bot; yang dipakai hanya API resminya. Untuk web umum, buat kunci Brave Search API sendiri, lalu jalankan dengan variabel lingkungan `BRAVE_API_KEY`.
-- **Kata kunci pertanyaan dikirim ke Wikipedia dan DuckDuckGo** (dan ke Brave, jika diaktifkan). Jangan menanyakan data pribadi dalam mode agent. Pakai `--tanpa-internet` jika perlu (untuk web: `bun run web -- --tanpa-internet`).
-- **Jawaban internet bukan dasar hukum.** Jawaban itu selalu diberi label "kutipan dari internet".
-- **Pencocokan masih berbasis kata, bukan makna.** Kalimat yang memuat semua kata kunci bisa saja menjawab hal lain. Selalu periksa tautan sumbernya.
-- **Mode agent lebih lambat.** Semua mode dijalankan, ditambah ±0,5–3 detik jika mencari di internet.
+- **Internet hanya lewat API resmi.** Bawaannya Wikipedia, ditambah DuckDuckGo Instant Answer untuk definisi/entitas; keduanya tanpa kunci. Brave Search aktif jika `BRAVE_API_KEY` diisi. Halaman hasil Google, DuckDuckGo, atau Bing tidak di-scrape.
+- **Situs yang diblokir jaringan dilewati otomatis.** Di Indonesia, DuckDuckGo diblokir penyedia internet (Internet Positif). Akibatnya koneksinya gagal dengan galat seperti "certificate has expired" atau "handshake failure". Setelah satu kali gagal seperti ini, situs itu dilewati selama 15 menit, dan panel cara kerja menuliskan alasannya. Agent tetap bekerja dengan Wikipedia dan sumber lokal.
+- **Kata kunci pertanyaan dikirim ke layanan tersebut.** Pakai `--tanpa-internet` jika perlu, juga untuk `bun run web`.
+- **Jawaban internet bukan dasar hukum.**
+- **Pencocokan berbasis kata, bukan makna.** Kalimat yang memuat semua kata kunci bisa saja menjawab hal lain. Selalu periksa sumbernya.
+- **`bun run eval-chat -- --agent` menguji mode ini tanpa internet.** Hasilnya 74/74. `--internet` mengizinkan internet, tetapi hasilnya tidak deterministik.
+
+### RAG dengan GPT pembaca (lebih mengerti konteks)
+
+RAG (*Retrieval-Augmented Generation*) berarti: **ambil** teks yang relevan dulu, lalu **baca** teks itu untuk menjawab. Di proyek ini bagian "generation"-nya adalah **GPT pembaca**. GPT pembaca tidak menulis bebas; ia **menunjuk rentang jawaban** di konteks, seperti BERT-QA/SQuAD 2.0. Karena jawabannya selalu disalin dari konteks, ia tidak bisa mengarang angka atau nama.
+
+Cara memakai: mode **RAG (GPT pembaca)** di web, `bun run chat -- --rag`, atau ketik `:rag` di terminal.
+
+```
+pesan + riwayat + memori
+  1. pahami konteks percakapan  "syaratnya?" setelah "berapa lama cuti besar?" -> "syarat cuti besar?"
+                                dicari DUA kali (asli vs berkonteks), dipakai yang hasilnya lebih kuat
+  2. ambil konteks              hasil cari + pasal yang dirujuk ("sebagaimana dimaksud dalam Pasal 5")
+                                + lanjutan pasal + catatan memori Anda yang relevan
+  3. GPT pembaca                <|user|> pertanyaan <|bot|> konteks  ->  peluang AWAL & AKHIR jawaban per token
+  4. verifikasi                 keyakinan ≥ ambang, bentuk cocok ("berapa" -> angka), kalimat asal memuat kata topik
+                                lolos -> "Jawaban singkat: …" + penjelasan & dasar hukum dari penyusun aturan
+                                gagal -> penyusun aturan seperti biasa (tidak pernah lebih buruk)
+```
+
+**Kepala pembaca (matematikanya).** Keluaran blok terakhir `h_t` (D angka per token) dikalikan `W_span` (D×2):
+
+- `z_awal(t) = h_t · W_span[:,0] + b_0` dan `z_akhir(t) = h_t · W_span[:,1] + b_1`
+- `p_awal = softmax(z_awal)` atas posisi `<|bot|>` dan sesudahnya; posisi `<|bot|>` berarti "tidak ada jawaban"
+- loss = `−log p_awal(i*) − log p_akhir(j*)`, gradien `∂L/∂z_t = p_t − 1[t = target]`
+- rentang terbaik = `argmax p_awal(i)·p_akhir(j)` dengan `i ≤ j ≤ i+30`
+- keyakinan = `p(rentang) / (p(rentang) + p(tidak ada))`
+
+Turunannya diuji dengan gradient check di `bun run test-gpt`.
+
+**Data latih tanpa label manual** (`bun run make-reader-data`, `src/gpt/reader-data.ts`). Pertanyaan dibuat dari pola kalimat Wikipedia:
+
+| Pola kalimat | Pertanyaan buatan | Rentang jawaban |
+|---|---|---|
+| "Virus adalah agen infeksi …" | "apa itu virus?" | "agen infeksi …" |
+| "… selama 12 hari kerja" | "berapa lama …?" | "12 hari kerja" |
+| "… didirikan pada tahun 1663" | "kapan … didirikan?" | "1663" |
+| "… ditulis oleh Andrea Hirata" | "siapa yang … ditulis?" | "Andrea Hirata" |
+| "… di Yerusalem" | "di mana …?" | "Yerusalem" |
+
+Konteks berisi kalimat sumber, kalimat tetangga, dan kalimat pengecoh dari artikel lain. ±30% contoh sengaja **tanpa jawaban**, supaya model belajar berkata "tidak ada". Val dibagi **per artikel**, jadi angka val adalah artikel yang belum pernah dilihat. Dokumen aturan tidak ikut dilatih secara bawaan; pakai `--dengan-aturan` jika mau.
+
+**Pelatihan** (`bun run train-reader`) memulai dari GPT pretrain "wiki", lalu konteks diperpanjang 128 → 256 token. Ini bisa karena positional encoding sinusoidal *dihitung*, bukan dipelajari. Di akhir, ambang keyakinan dikalibrasi di data val.
+
+**Hasil saat ini** (`bun run eval-reader`, 1000 contoh dari artikel val yang belum pernah dilihat):
+
+| Pola | EM | F1 |
+|---|---|---|
+| waktu | 73,1% | 77,6% |
+| siapa | 73,5% | 78,9% |
+| tempat | 69,6% | 74,4% |
+| besaran | 63,0% | 76,6% |
+| definisi | 29,4% | 72,7% |
+| **total** | **65,3%** | **76,0%** |
+
+- Contoh tanpa jawaban yang ditolak dengan benar: 60%. Kecepatan ±45 ms per contoh.
+- Riwayat latih: 622 langkah dari "wiki" (F1 59%), lalu 1800 langkah lanjutan (F1 76%). Waktunya ±47 menit di CPU.
+
+**Pada dokumen aturan** (`bun run eval -- --rag`), pembaca belum banyak membantu. Ia hanya dilatih dari Wikipedia; bahasa pasal ("12 (dua belas) hari kerja", "ayat (1)") berbeda. Hasilnya: 1 dari 21 jawaban lolos verifikasi, dan yang lolos itu benar. Rentang yang salah ("6 (en", "3 (1) Uang hari") ditolak verifikasi. Jadi akurasi tetap 90,5%, tidak turun.
+
+Untuk dokumen Anda sendiri, latih ulang dengan data dari dokumen aturan juga:
+
+```
+bun run make-reader-data -- --dengan-aturan
+bun run train-reader -- --from reader --name reader2 --steps 1500
+```
+
+Catatan: setelah itu, skor `bun run eval` tidak lagi sepenuhnya "belum pernah dilihat".
+
+**Konteks percakapan, dokumen, dan memori (berlaku juga tanpa RAG):**
+
+- **Elipsis aturan.** "syaratnya?" setelah "berapa lama cuti besar?" ditulis ulang menjadi "syarat cuti besar?". Jika pengguna ganti topik ("berapa hari cuti tahunan?"), pencarian tanpa konteks yang menang.
+- **Lanjutan internet.** Jawaban internet di mode agent kini menyimpan topik. "kapan dia lahir?" setelah membahas Soekarno dicari sebagai "kapan Soekarno lahir?".
+- **Pasal yang dirujuk** dan lanjutan pasal ikut dibaca (mode RAG).
+- **Catatan memori pribadi.** Contohnya "saya sedang sakit". Untuk pertanyaan tentang diri Anda ("berapa lama cuti yang bisa saya ambil?"), catatan itu menjadi konteks pencarian, dan dipakai jika hasilnya lebih kuat (mode RAG). Catatan yang dipakai disebutkan di jawaban.
 
 ### Memori
 

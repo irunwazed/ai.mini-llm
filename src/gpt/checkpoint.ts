@@ -14,7 +14,7 @@ export const FOLDER_GPT = "gpt-models";
 
 export interface Riwayat { langkah: number; lossTrain: number; lossVal: number; detik: number }
 export interface MetaGPT {
-  mode?: "teks" | "chat";   // chat = sudah di-fine-tune untuk percakapan
+  mode?: "teks" | "chat" | "pembaca";   // chat = fine-tune percakapan; pembaca = GPT pembaca (kepala span)
   dasar?: string;           // nama model pretrain asal (untuk fine-tune)
   config: GPTConfig;
   bpe: BPE;
@@ -25,6 +25,8 @@ export interface MetaGPT {
   data: string;
   jumlahToken: number;
   waktu: string;
+  /** Khusus pembaca: ambang keyakinan hasil kalibrasi + skor val. */
+  pembaca?: { ambang: number; em: number; f1: number; akurasiKosong: number; contohVal: number };
 }
 
 const keF32 = (a: Vec) => Buffer.from(Float32Array.from(a).buffer);
@@ -53,7 +55,7 @@ export function muatGPT(nama: string): { meta: MetaGPT; P: Float64Array; adam?: 
 }
 
 /** Nama model GPT yang paling baru dilatih; `mode` = hanya model ber-mode itu (mis. "chat"). */
-export function gptTerbaru(mode?: "teks" | "chat"): string | null {
+export function gptTerbaru(mode?: "teks" | "chat" | "pembaca"): string | null {
   if (!existsSync(FOLDER_GPT)) return null;
   const modeDari = (n: string) => (JSON.parse(readFileSync(join(FOLDER_GPT, n, "gpt.json"), "utf8")) as MetaGPT).mode ?? "teks";
   const daftar = readdirSync(FOLDER_GPT)

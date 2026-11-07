@@ -10,6 +10,7 @@
  *
  * Mode teks : pekerjaan = posisi awal jendela di aliran token bersama
  * Mode chat : pekerjaan = nomor urutan percakapan (dikirim sekali saat init)
+ * Mode span : pekerjaan = nomor contoh GPT pembaca (loss awal/akhir jawaban)
  */
 import { GPT, type GPTConfig } from "./model.js";
 import { Rng } from "./random.js";
@@ -20,6 +21,7 @@ let model: GPT;
 let G: Float64Array;
 let token: Int32Array;
 let urutan: { x: Int32Array; y: Int32Array }[] = [];
+let span: { x: Int32Array; batas: number; mulai: number; akhir: number }[] = [];
 
 self.onmessage = (e: MessageEvent) => {
   const m = e.data;
@@ -28,6 +30,7 @@ self.onmessage = (e: MessageEvent) => {
     G = new Float64Array(m.gradien as SharedArrayBuffer);
     if (m.token) token = new Int32Array(m.token as SharedArrayBuffer);
     if (m.urutan) urutan = m.urutan;
+    if (m.span) span = m.span;
     if (m.dropout > 0) model.aturDropout(m.dropout, new Rng(m.seed).next);
     self.postMessage({ jenis: "siap" });
   } else if (m.jenis === "hitung") {
@@ -35,7 +38,8 @@ self.onmessage = (e: MessageEvent) => {
     G.fill(0);
     let loss = 0;
     for (const s of m.kerja as number[]) {
-      if (urutan.length) loss += model.langkah(urutan[s].x, urutan[s].y, G, skala);
+      if (span.length) { const u = span[s]; loss += model.langkahSpan(u.x, u.mulai, u.akhir, u.batas, G, skala); }
+      else if (urutan.length) loss += model.langkah(urutan[s].x, urutan[s].y, G, skala);
       else loss += model.langkah(token.subarray(s, s + T), token.subarray(s + 1, s + T + 1), G, skala);
     }
     self.postMessage({ jenis: "selesai", loss });

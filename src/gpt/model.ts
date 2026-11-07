@@ -33,6 +33,7 @@ export interface GPTConfig {
   layers: number;  // jumlah blok N
   ff: number;      // dimensi tersembunyi feed forward
   preLN: boolean;  // false = post-LN (sesuai gambar)
+  spanHead?: boolean; // true = "GPT pembaca": kepala tambahan yang menunjuk awal & akhir jawaban di konteks
 }
 
 export interface TensorInfo { off: number; rows: number; cols: number; decay: boolean }
@@ -57,6 +58,7 @@ export function susunParameter(c: GPTConfig): { tensor: Map<string, TensorInfo>;
   if (c.preLN) { tambah("lnfg", 1, D, false); tambah("lnfb", 1, D, false); }
   tambah("wout", D, c.vocab, true);
   tambah("bout", 1, c.vocab, false);
+  if (c.spanHead) { tambah("wspan", D, 2, true); tambah("bspan", 1, 2, false); } // kolom 0 = awal, 1 = akhir
   return { tensor, ukuran: off };
 }
 
@@ -99,6 +101,7 @@ export class GPT {
   readonly P: Vec;
   readonly ukuran: number;
   readonly logits: Vec;            // T×V hasil forward terakhir
+  readonly spanZ: Vec;             // T×2 skor awal/akhir jawaban (hanya jika spanHead)
   private readonly t: Map<string, TensorInfo>;
   private readonly pe: Vec;
   private readonly x0: Vec;
@@ -109,6 +112,7 @@ export class GPT {
   private readonly dU: Vec; private readonly dO: Vec; private readonly dA: Vec;
   private readonly dQ: Vec; private readonly dK: Vec; private readonly dV: Vec;
   private readonly dG: Vec; private readonly dF1: Vec; private readonly dPbaris: Vec;
+  private readonly dSpan: Vec;
   // Dropout: aktif hanya saat training (aturDropout). m0 = embedding, ma/mf = cabang attention/FFN.
   private dropoutP = 0;
   private acak: () => number = Math.random;
@@ -142,6 +146,7 @@ export class GPT {
     }));
     this.akhir = f(T * D); this.lnfhat = f(T * D); this.lnfr = f(T);
     this.logits = f(T * V); this.dLogits = f(T * V);
+    this.spanZ = f(T * 2); this.dSpan = f(T * 2);
     this.dY = f(T * D); this.dH = f(T * D); this.dS = f(T * D); this.dU = f(T * D);
     this.dO = f(T * D); this.dA = f(T * D); this.dQ = f(T * D); this.dK = f(T * D); this.dV = f(T * D);
     this.dG = f(T * F); this.dF1 = f(T * F); this.dPbaris = f(T);
@@ -193,8 +198,8 @@ export class GPT {
     };
   }
 
-  /** Forward: mengisi this.logits (T×V) untuk setiap posisi. */
-  forward(ids: ArrayLike<number>): void {
+  /** Forward: mengisi this.logits (T×V) untuk setiap posisi. `lm = false` melewati Linear kosakata (untuk pembaca). */
+  forward(ids: ArrayLike<number>, lm = true): void {
     const { dim: D, heads: H, ff: F, vocab: V, preLN } = this.c;
     const T = ids.length;
     if (T > this.c.context) throw new Error(`panjang ${T} melebihi konteks ${this.c.context}`);
@@ -243,7 +248,45 @@ export class GPT {
     // --- (Layer Norm akhir untuk pre-LN) lalu Linear -> logits
     if (preLN) layerNormForward(x, T, D, P, this.off("lnfg"), this.off("lnfb"), this.akhir, this.lnfhat, this.lnfr);
     else this.akhir.set(x.subarray(0, n));
-    linearForward(this.akhir, T, D, V, P, this.off("wout"), this.off("bout"), this.logits);
+    if (lm) linearForward(this.akhir, T, D, V, P, this.off("wout"), this.off("bout"), this.logits);
+  }
+
+  /**
+   * GPT PEMBACA: skor awal & akhir jawaban untuk setiap token.
+   *   z_t = h_t · W_span + b_span      (h_t = keluaran blok terakhir, W_span berukuran D×2)
+   * Hasil di this.spanZ: [t*2] = skor "jawaban mulai di t", [t*2+1] = skor "jawaban berakhir di t".
+   */
+  forwardSpan(ids: ArrayLike<number>): Vec {
+    if (!this.c.spanHead) throw new Error("model ini tidak punya kepala pembaca (spanHead)");
+    this.forward(ids, false);
+    linearForward(this.akhir, ids.length, this.c.dim, 2, this.P, this.off("wspan"), this.off("bspan"), this.spanZ);
+    return this.spanZ;
+  }
+
+  /**
+   * Loss pembaca + (opsional) backward. Posisi yang boleh dipilih hanya t ≥ batas;
+   * posisi `batas` itu sendiri (token <|bot|>) berarti "tidak ada jawaban di konteks".
+   *   p_awal = softmax(z_awal[batas..T)),  L = −log p_awal[mulai] − log p_akhir[akhir]
+   *   ∂L/∂z_t = p_t − 1[t = target]      (sama seperti cross-entropy biasa)
+   */
+  langkahSpan(ids: ArrayLike<number>, mulai: number, akhirJawab: number, batas: number, G: Vec | null, skala: number): number {
+    const Z = this.forwardSpan(ids);
+    const T = ids.length, D = this.c.dim;
+    if (G) this.dSpan.fill(0, 0, T * 2);
+    let loss = 0;
+    for (const [kol, target] of [[0, mulai], [1, akhirJawab]] as const) {
+      let maks = -Infinity;
+      for (let t = batas; t < T; t++) maks = Math.max(maks, Z[t * 2 + kol]);
+      let jumlah = 0;
+      for (let t = batas; t < T; t++) jumlah += Math.exp(Z[t * 2 + kol] - maks);
+      loss += -(Z[target * 2 + kol] - maks - Math.log(jumlah));
+      if (G) for (let t = batas; t < T; t++) this.dSpan[t * 2 + kol] = skala * (Math.exp(Z[t * 2 + kol] - maks) / jumlah - (t === target ? 1 : 0));
+    }
+    if (!G) return loss;
+    this.dY.fill(0, 0, T * D);
+    linearBackward(this.akhir, this.dSpan, T, D, 2, this.P, G, this.off("wspan"), this.off("bspan"), this.dY);
+    this.mundur(ids, G);
+    return loss;
   }
 
   /**
@@ -261,6 +304,14 @@ export class GPT {
     // Linear keluaran
     this.dY.fill(0, 0, n);
     linearBackward(this.akhir, this.dLogits, T, D, V, P, G, this.off("wout"), this.off("bout"), this.dY);
+    this.mundur(ids, G);
+    return loss;
+  }
+
+  /** Backward dari this.dY = ∂L/∂(keluaran akhir) sampai embedding. Dipakai bersama LM dan pembaca. */
+  private mundur(ids: ArrayLike<number>, G: Vec): void {
+    const { dim: D, ff: F, heads: H, preLN } = this.c;
+    const T = ids.length, n = T * D, P = this.P;
     if (preLN) {
       this.dS.fill(0, 0, n);
       layerNormBackward(this.dY, T, D, P, G, this.off("lnfg"), this.off("lnfb"), this.lnfhat, this.lnfr, this.dS);
@@ -312,6 +363,5 @@ export class GPT {
       const e = tok + ids[t] * D;
       for (let d = 0; d < D; d++) G[e + d] += sD * this.dY[t * D + d];
     }
-    return loss;
   }
 }

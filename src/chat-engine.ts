@@ -31,6 +31,9 @@ import { AMBANG_NIAT, balasanTemplat, keluarga, niatBalasan, niatPesan } from ".
 import { pahamiMaksud } from "./intent.js";
 import { jalankanAgent } from "./reasoning/agent.js";
 import { periksaJawaban } from "./reasoning/critic.js";
+import { jumlahKataTopik, kataTopik, konteksLebihBaik, mungkinLanjutan, tulisUlang } from "./rag/dialog.js";
+import { bacaRAG, type Pembaca } from "./rag/pipeline.js";
+import { memoriRelevan } from "./rag/retrieve.js";
 import { Memori, PRIBADI } from "./memory.js";
 import { normalisasiSlang } from "./text/slang.js";
 import { muatModel, type Model } from "./model.js";
@@ -39,7 +42,7 @@ import { keTerm, tokenisasi } from "./text/normalize.js";
 
 export type Jalur = "obrolan" | "aturan" | "wiki" | "memori" | "detail" | "maksud" | "klarifikasi" | "penalaran" | "internet" | "tidak-ditemukan";
 /** "agent" dijalankan oleh src/agent/multi-mode.ts (async, bisa ke internet); di proses() diperlakukan sebagai "otomatis". */
-export type Mode = "otomatis" | "aturan" | "wiki" | "gpt" | "penalaran" | "agent";
+export type Mode = "otomatis" | "aturan" | "wiki" | "gpt" | "penalaran" | "agent" | "rag";
 
 export interface LangkahProses {
   tahap: string;       // nama tahap, mis. "Cari di dokumen aturan"
@@ -53,7 +56,7 @@ export interface SumberTampil { nomor: number; label: string; teks: string }
 /** Topik pembicaraan terakhir, untuk memahami pertanyaan lanjutan. */
 export interface Topik {
   pertanyaan: string;
-  jalur: "aturan" | "wiki";
+  jalur: "aturan" | "wiki" | "internet";
   subjek: string;        // judul artikel (wiki) atau pertanyaan aturan
   sumberLabel: string;
   sumberTeks: string;
@@ -73,7 +76,8 @@ export interface Respons {
   label?: string;               // keterangan kecil di bawah jawaban
 }
 
-export interface OpsiProses { riwayat?: GiliranRiwayat[]; topik?: Topik | null; mode?: Mode; suhu?: number }
+/** rag = jawaban aturan/Wikipedia dibaca ulang oleh GPT pembaca (mode "rag" otomatis menyalakannya). */
+export interface OpsiProses { riwayat?: GiliranRiwayat[]; topik?: Topik | null; mode?: Mode; suhu?: number; rag?: boolean }
 
 export const SAPAAN =
   /^(halo+|hai+|hi|hallo|helo|hey|permisi|assalamu|asalamu|selamat (pagi|siang|sore|malam)|(met )?(pagi|siang|sore|malam)\b|apa kabar|(gimana|bagaimana) kabar|terima ?kasih|makasih|thanks|trims|dadah|bye|sampai (jumpa|nanti)|selamat tinggal|kamu siapa|siapa (kamu|namamu)|nama kamu|kamu (bisa apa|robot|manusia)|oke?\b|sip\b|siap\b|tes\b|test\b|ping\b|maaf\b|keren|mantap|nama (saya|aku)|namaku|panggil (aku|saya)|perkenalkan)/i;
@@ -88,6 +92,15 @@ const LANJUTAN = /^(kalau|kalo|lalu|terus|trus|bagaimana dengan|gimana dengan|un
 /** "kapan DIA lahir?", "apa fungsiNYA?" -> merujuk subjek sebelumnya. ("itu/ini" tidak: "apa itu X" bukan rujukan) */
 const RUJUK = /\b(dia|ia|beliau|mereka|tersebut)\b|\w{3,}nya\b/i;
 /** "lanjutkan", "lebih detail" -> tampilkan teks lengkap sumber sebelumnya. */
+/** Ringkasan satu hasil pencarian untuk tabel perbandingan "tanpa konteks vs berkonteks". */
+function ringkasJawab(j: Jawaban) {
+  const h = j.hasil[0];
+  return {
+    keyakinan: j.keyakinan, jenis: j.jenis, pasal: h ? `${h.potongan.file} · ${h.potongan.pasal}` : "-",
+    cakupan: Number((h?.cakupan ?? 0).toFixed(2)), kekuatan: Number((h?.kekuatan ?? 0).toFixed(2)),
+    kalimat: j.utama[0]?.slice(0, 200) ?? "",
+  };
+}
 const MINTA_DETAIL = /^(lanjut(kan)?|lebih (lanjut|detail|lengkap|rinci)|jelaskan lebih|selengkapnya|detail(nya)?|teks lengkap(nya)?|baca selengkapnya)\b/i;
 
 interface ModelGPT { nama: string; model: GPT; tok: Tokenizer; hurufKecil: boolean; langkah: number; lossVal: number }
@@ -97,9 +110,10 @@ export class MesinChat {
   readonly wiki: Model | null;
   readonly gpt: ModelGPT | null;
   readonly memori: Memori;
+  readonly pembaca: Pembaca | null;
   private readonly k: number;
 
-  constructor(opsi: { folderModel?: string; folderWiki?: string; chatGpt?: string; k?: number; fileMemori?: string } = {}) {
+  constructor(opsi: { folderModel?: string; folderWiki?: string; chatGpt?: string; k?: number; fileMemori?: string; pembaca?: string } = {}) {
     this.aturan = muatModel(opsi.folderModel ?? "model");
     const fw = opsi.folderWiki ?? "model-wiki";
     this.wiki = existsSync(join(fw, "istilah.json")) ? muatModel(fw) : null;
@@ -109,6 +123,11 @@ export class MesinChat {
       this.gpt = { nama, model: new GPT(meta.config, P), tok: new Tokenizer(meta.bpe), hurufKecil: meta.hurufKecil, langkah: meta.langkah, lossVal: meta.lossValTerbaik };
     } else this.gpt = null;
     this.memori = new Memori(opsi.fileMemori ?? "data/memory.json");
+    const namaPembaca = opsi.pembaca ?? gptTerbaru("pembaca");
+    if (namaPembaca) {
+      const { meta, P } = muatGPT(namaPembaca);
+      this.pembaca = { nama: namaPembaca, model: new GPT(meta.config, P), tok: new Tokenizer(meta.bpe), hurufKecil: meta.hurufKecil, ambang: meta.pembaca?.ambang ?? 0.5, f1: meta.pembaca?.f1 ?? 0 };
+    } else this.pembaca = null;
     this.k = opsi.k ?? 3;
   }
 
@@ -118,13 +137,15 @@ export class MesinChat {
       wiki: this.wiki ? { potongan: this.wiki.potongan.length, artikel: new Set(this.wiki.potongan.map((p) => p.file)).size } : null,
       gpt: this.gpt ? { nama: this.gpt.nama, parameter: this.gpt.model.ukuran, lapisan: this.gpt.model.c.layers, dim: this.gpt.model.c.dim, konteks: this.gpt.model.c.context, langkah: this.gpt.langkah, lossVal: this.gpt.lossVal } : null,
       memori: this.memori.semua().length,
+      pembaca: this.pembaca ? { nama: this.pembaca.nama, ambang: this.pembaca.ambang, f1: this.pembaca.f1 } : null,
     };
   }
 
   /** Proses satu pesan dengan riwayat percakapan, topik sebelumnya, dan memori. */
   proses(pesanAsli: string, opsi: OpsiProses = {}): Respons {
     const riwayat = opsi.riwayat ?? [], topik = opsi.topik ?? null, suhu = opsi.suhu ?? 0.4;
-    const mode = !opsi.mode || opsi.mode === "agent" ? "otomatis" : opsi.mode;
+    const mode = !opsi.mode || opsi.mode === "agent" || opsi.mode === "rag" ? "otomatis" : opsi.mode;
+    const rag = opsi.mode === "rag" || opsi.rag === true;
     const proses: LangkahProses[] = [];
     const ukur = <T>(tahap: string, f: () => T, ringkas: (x: T) => string, data?: (x: T) => unknown): T => {
       const t0 = performance.now();
@@ -270,7 +291,7 @@ export class MesinChat {
     // Pertanyaan yang merujuk subjek pembahasan Wikipedia sebelumnya ("kapan DIA lahir?") ditulis ulang
     // SEBELUM pencarian apa pun, supaya dokumen aturan juga tidak salah menangkap "lahir" -> "melahirkan".
     let kueri = pesan, jenisWarisan: Jenis | undefined, subjek: string | undefined;
-    if (topik?.jalur === "wiki") {
+    if (topik?.jalur === "wiki" || topik?.jalur === "internet") {
       if (LANJUTAN.test(pesan)) { kueri = pesan.replace(LANJUTAN, ""); jenisWarisan = jenisPertanyaan(topik.pertanyaan); }
       else if (RUJUK.test(pesan)) subjek = topik.subjek;
       if (kueri !== pesan || subjek) proses.push({
@@ -282,11 +303,45 @@ export class MesinChat {
     }
 
     // 2. Aturan (pertanyaan lanjutan aturan membawa pertanyaan sebelumnya sebagai konteks)
-    const lanjutanAturan = topik?.jalur === "aturan" && (LANJUTAN.test(pesan) || (keTerm(pesan).length <= 2 && jenisPertanyaan(pesan) === "umum"));
+    let lanjutanAturan = topik?.jalur === "aturan" && (LANJUTAN.test(pesan) || (keTerm(pesan).length <= 2 && jenisPertanyaan(pesan) === "umum"));
+    // RAG: catatan memori pribadi yang relevan ("saya PNS golongan III") ikut menjadi konteks
+    const memoriKonteks = rag && PRIBADI.test(pesan) ? memoriRelevan(this.memori.semua(), pesan, true) : [];
     let hasil: Jawaban | null = null, sumberModel = this.aturan;
     if (mode === "otomatis" || mode === "aturan") {
       hasil = ukur("Cari di dokumen aturan (BM25)", () => jawab(this.aturan, kueri, { k: this.k, konteks: lanjutanAturan ? topik!.pertanyaan : "", subjek }),
         (x) => `keyakinan ${x.keyakinan}${lanjutanAturan ? ` (lanjutan dari: "${topik!.pertanyaan}")` : ""}`, (x) => this.ringkasCari(this.aturan, x));
+      // LOOP KONTEKS: pertanyaan pendek / berkata ganti ("syaratnya?", "kalau yang itu?") dicari juga
+      // dengan konteks pertanyaan sebelumnya (atau catatan memori); dipakai yang hasil pencariannya lebih kuat.
+      const calon: { kueri: string; konteks: string; label: string; lanjutan: boolean }[] = [];
+      if (topik?.jalur === "aturan" && (lanjutanAturan || mungkinLanjutan(pesan))) {
+        if (!lanjutanAturan) calon.push({ kueri, konteks: topik.pertanyaan, label: `konteks pertanyaan sebelumnya "${topik.pertanyaan}"`, lanjutan: true });
+        // elipsis: "syaratnya?" -> "syarat cuti besar?" (kata topik pertanyaan sebelumnya mengisi bagian yang hilang)
+        const topikLama = kataTopik(topik.pertanyaan);
+        const ulang = topikLama ? tulisUlang(kueri.replace(LANJUTAN, ""), topikLama) : kueri;
+        if (ulang !== kueri && jumlahKataTopik(kueri.replace(LANJUTAN, "")) === 0) calon.push({ kueri: ulang, konteks: topik.pertanyaan, label: `pertanyaan ditulis ulang "${ulang}"`, lanjutan: true });
+      }
+      if (memoriKonteks.length && !lanjutanAturan) {
+        // kata topik catatan ("saya sedang sakit" -> "sakit") digabung ke pertanyaan, supaya ikut dihitung cakupannya
+        const tambahan = memoriKonteks.map((c) => kataTopik(c.teks)).filter(Boolean).join(" ");
+        if (tambahan) calon.push({ kueri: `${kueri.replace(/[?.!]+$/, "")} ${tambahan}?`, konteks: "", label: `catatan memori ${memoriKonteks.map((c) => `#${c.id}`).join(", ")} ("${tambahan}" ditambahkan ke pertanyaan)`, lanjutan: false });
+      }
+      for (const c of calon) {
+        const lain = jawab(this.aturan, c.kueri, { k: this.k, konteks: c.konteks, subjek });
+        const menang = konteksLebihBaik(lain, hasil!);
+        proses.push({
+          tahap: "Pahami konteks percakapan",
+          hasil: `dicari ulang dengan ${c.label}: keyakinan ${lain.keyakinan} (cakupan ${Math.round(100 * (lain.hasil[0]?.cakupan ?? 0))}%) vs sebelumnya ${hasil!.keyakinan} (${Math.round(100 * (hasil!.hasil[0]?.cakupan ?? 0))}%) -> ${menang ? "dipakai" : "diabaikan (topik baru / tidak lebih baik)"}`,
+          ms: 0,
+          data: {
+            alasan: c.label, menang,
+            pilihan: [
+              { nama: "tanpa konteks", kueri, konteks: "", ...ringkasJawab(hasil!) },
+              { nama: "berkonteks", kueri: c.kueri, konteks: c.konteks, ...ringkasJawab(lain) },
+            ],
+          },
+        });
+        if (menang) { hasil = lain; kueri = c.kueri; if (c.lanjutan) lanjutanAturan = true; }
+      }
     }
     const tidakAda = () => !hasil || hasil.keyakinan === "rendah";
 
@@ -380,7 +435,32 @@ export class MesinChat {
         sumberTeks: utama.teks,
       }
       : topik;
-    return { jalur, keyakinan: j.keyakinan, proses, teks: formatJawaban(sumberModel, j), sumber, topik: topikBaru };
+    let teks = formatJawaban(sumberModel, j), label: string | undefined;
+
+    // RAG: GPT pembaca membaca potongan konteks (termasuk pasal yang dirujuk & catatan memori),
+    // lalu jawabannya diverifikasi. Jika lolos, rentang jawaban ditampilkan di depan; penyusun aturan tetap
+    // menyusun penjelasan + dasar hukum di bawahnya (jadi tidak pernah lebih buruk dari tanpa RAG).
+    if (rag && this.pembaca) {
+      const t0 = performance.now();
+      const r = bacaRAG(this.pembaca, sumberModel, j, subjek ? `${kueri} ${subjek}` : kueri, { memori: memoriKonteks });
+      proses.push({
+        tahap: "Ambil konteks (RAG)", ms: 0,
+        hasil: `${r.konteks.length} potongan: ${[...new Set(r.konteks.map((k) => k.alasan))].map((a) => `${r.konteks.filter((k) => k.alasan === a).length} ${a}`).join(", ")}`,
+        data: { konteks: r.konteks.map((k) => ({ label: k.label, alasan: k.alasan, skor: Number(k.skor.toFixed(2)), cuplikan: k.teks.replace(/\s+/g, " ").slice(0, 160) })) },
+      });
+      proses.push({
+        tahap: `GPT pembaca "${this.pembaca.nama}"`, ms: performance.now() - t0,
+        hasil: r.baca ? `rentang "${r.jawaban}" dari ${r.label}, keyakinan ${(100 * r.keyakinan).toFixed(0)}%` : r.alasan.join("; "),
+        data: r.baca ? { token: r.baca.token.slice(0, 160), pAwal: r.baca.pAwal.slice(0, 160), pAkhir: r.baca.pAkhir.slice(0, 160), pilih: r.baca.pilih, keyakinan: r.keyakinan, ambang: this.pembaca.ambang, dibaca: r.dibaca } : undefined,
+      });
+      proses.push({ tahap: "Verifikasi jawaban pembaca", hasil: `${r.diterima ? "DITERIMA" : "DITOLAK -> penyusun aturan"}: ${r.alasan.join("; ")}`, ms: 0 });
+      if (r.diterima) {
+        teks = `Jawaban singkat: ${r.jawaban} (dibaca GPT pembaca dari ${r.label})\n\n${teks}`;
+        label = `RAG: rentang jawaban ditunjuk GPT pembaca (keyakinan ${(100 * r.keyakinan).toFixed(0)}%), penjelasan + sumber dari penyusun aturan`;
+      } else label = "RAG: GPT pembaca ragu, jawaban dari penyusun aturan";
+      if (memoriKonteks.length) teks += `\n\nCatatan Anda yang dipakai sebagai konteks: ${memoriKonteks.map((c) => `"${c.teks}"`).join("; ")}`;
+    }
+    return { jalur, keyakinan: j.keyakinan, proses, teks, sumber, topik: topikBaru, label };
   }
 
   /**
@@ -407,7 +487,7 @@ export class MesinChat {
     return pilihan.length >= 3 ? pilihan.slice(0, 4) : null;
   }
 
-  private dariMemori(pesan: string, proses: LangkahProses[], alasan: string): Omit<Respons, "topik"> | null {
+  dariMemori(pesan: string, proses: LangkahProses[], alasan: string): Omit<Respons, "topik"> | null {
     const t0 = performance.now();
     const m = this.memori.cari(pesan);
     proses.push({

@@ -59,6 +59,12 @@ const kalkulator: Alat = {
 /** Urutan penting: teka-teki jebakan diperiksa lebih dulu agar tidak "dihitung" secara keliru. */
 const ALAT: Alat[] = [tekaTeki, silogisme, kalender, barisan, persamaan, lajuKerja, selangWaktu, bandingBerat, kalkulator];
 
+/** Apakah ada alat penalaran yang mengenali pesan ini sebagai soal hitung/logika? */
+export function adaAlatPenalaran(pesan: string): boolean {
+  const t = kataOperator(pesan);
+  return ALAT.some((a) => { try { return a.cocok(t); } catch { return false; } });
+}
+
 export function jalankanAgent(pesan: string, maksLangkah = 6): HasilAgent | null {
   const t = kataOperator(pesan);
   const calon = ALAT.filter((a) => { try { return a.cocok(t); } catch { return false; } });

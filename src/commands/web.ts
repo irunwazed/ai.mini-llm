@@ -37,7 +37,7 @@ const server = Bun.serve({
           const b = (await req.json()) as { pesan?: string; riwayat?: GiliranRiwayat[]; topik?: Topik | null; mode?: Mode; suhu?: number };
           const pesan = String(b.pesan ?? "").trim().slice(0, 500);
           if (!pesan) return galat("Pesan kosong.");
-          const mode: Mode = ["otomatis", "aturan", "wiki", "gpt", "penalaran", "agent"].includes(String(b.mode)) ? (b.mode as Mode) : "otomatis";
+          const mode: Mode = ["otomatis", "aturan", "wiki", "gpt", "penalaran", "agent", "rag"].includes(String(b.mode)) ? (b.mode as Mode) : "otomatis";
           const suhu = Math.min(1.5, Math.max(0.05, Number(b.suhu ?? 0.4)));
           const riwayat = Array.isArray(b.riwayat) ? b.riwayat.slice(-10).map((g) => ({ user: String(g.user ?? ""), bot: String(g.bot ?? ""), jalur: g.jalur })) : [];
           const t0 = performance.now();
