@@ -15,6 +15,7 @@ import { existsSync } from "node:fs";
 export const LOKASI = {
   dokumenAturan: "documents",
   dokumenUpload: "documents/upload",
+  dokumenWeb: "documents/web",
   mentah: "data/mentah",
   wikiTeks: "data/mentah/wikipedia/wiki-id.txt",
   wikiJudul: "data/mentah/wikipedia/sumber.txt",
@@ -27,7 +28,24 @@ export const LOKASI = {
   modelGPT: "gpt-models",
   progres: "progres",
   log: "progres/log",
+  /** kunci & token (Google Drive, alamat server) — TIDAK di-commit, jangan dicetak */
+  rahasia: ".rahasia",
 } as const;
+
+/**
+ * Folder yang boleh disinkron dengan Google Drive (`bun run drive`). Di Drive, isinya ada di folder
+ * "LLM dari Nol" dengan path yang sama (documents/jdih/x.pdf <-> LLM dari Nol/documents/jdih/x.pdf).
+ */
+export const FOLDER_SINKRON = [LOKASI.dokumenAturan, LOKASI.mentah, LOKASI.siap, LOKASI.modelGPT] as const;
+/** Bagian yang tidak pernah disinkron: cache mesin ini & file sementara. */
+export const LEWATI_SINKRON = [/^gpt-models\/cache\//, /\.part$/, /\.stop$/, /(^|\/)\.DS_Store$/, /(^|\/)Thumbs\.db$/, /(^|\/)desktop\.ini$/];
+
+/** Path folder sinkron yang sah: di dalam FOLDER_SINKRON, tanpa "..", hanya karakter aman. */
+export function folderSinkronSah(p: string): boolean {
+  const n = p.replace(/\\/g, "/").replace(/\/+$/, "");
+  if (!/^[\w .\/-]{1,200}$/.test(n) || n.split("/").some((x) => x === ".." || x === "." || x === "")) return false;
+  return FOLDER_SINKRON.some((f) => n === f || n.startsWith(f + "/"));
+}
 
 /** Lokasi lama -> lokasi baru (untuk `bun run migrasi-data`). */
 export const LOKASI_LAMA: [string, string][] = [

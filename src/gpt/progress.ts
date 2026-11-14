@@ -1,5 +1,5 @@
 /**
- * PROGRES & KONTROL untuk proses panjang (train-gpt, train-reader, fetch-data, fetch-jdih).
+ * PROGRES & KONTROL untuk proses panjang (train-gpt, train-reader, fetch-data, fetch-jdih, fetch-web).
  *
  *   - baris progres hidup di terminal:  langkah 412/800 [██████████░░░░░░░░░░] 51%  loss 0,71 …  sisa ±13m
  *   - file progres/<jenis>-<nama>.json  -> dibaca `bun run status` (terminal lain) dan panel web
@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { join } from "node:path";
 
 export const FOLDER_PROGRES = "progres";
-export type JenisProses = "train-gpt" | "train-reader" | "fetch-data" | "fetch-jdih" | "siapkan-data" | "train" | "index-wiki" | "make-chat-data" | "make-reader-data" | "eval";
+export type JenisProses = "train-gpt" | "train-reader" | "fetch-data" | "fetch-jdih" | "fetch-web" | "siapkan-data" | "train" | "index-wiki" | "make-chat-data" | "make-reader-data" | "eval" | "drive";
 export type StatusProses = "berjalan" | "berhenti" | "selesai" | "gagal" | "terhenti tiba-tiba";
 
 export interface Progres {

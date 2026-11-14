@@ -24,6 +24,8 @@
  *   --patience (5)             early stopping: berhenti jika loss val tak membaik N evaluasi
  *   --dropout (0.1) --weight-decay (0.1) --workers (jumlah CPU − 2) --seed (1)
  *   --pre-ln --keep-case
+ *   --gpu                      latih di GPU NVIDIA (backend CUDA tulisan sendiri; butuh `bun run build-gpu` di server).
+ *                              Saran: --batch 64. Checkpoint tetap format yang sama (dipakai chatbot di laptop).
  */
 import { cpus } from "node:os";
 import { basename } from "node:path";
@@ -37,6 +39,7 @@ import { Adam, jadwalLR } from "../gpt/optimizer.js";
 import { Rng } from "../gpt/random.js";
 import { hasilkanTeks } from "../gpt/text-generator.js";
 import { Pelacak } from "../gpt/progress.js";
+import type { GPTCuda, UrutanGPU } from "../gpu/cuda.js";
 import { argumen } from "./args.js";
 
 const { opsi } = argumen();
@@ -139,7 +142,8 @@ const lrMaks = angka("lr", opsi.from ? 1e-3 : 3e-3);
 const adam = new Adam(model, { lr: lrMaks, weightDecay: angka("weight-decay", 0.1) });
 if (opsi.resume === "true" && asal?.adam) { adam.m.set(asal.adam.m); adam.v.set(asal.adam.v); }
 const dropout = angka("dropout", 0.1);
-const nPekerja = Math.max(1, Math.min(angka("workers", Math.max(1, cpus().length - 2)), angka("batch", 16)));
+const pakaiGPU = opsi.gpu === "true";
+const nPekerja = pakaiGPU ? 1 : Math.max(1, Math.min(angka("workers", Math.max(1, cpus().length - 2)), angka("batch", 16)));
 console.log(`[3/4] GPT ${config.preLN ? "pre-LN" : "post-LN (sesuai diagram)"}: ${config.layers} lapisan, dim ${config.dim}, ${config.heads} head, konteks ${T}, FF ${config.ff}`);
 console.log(`      ${ukuran.toLocaleString("id-ID")} parameter | dropout ${dropout} | ${nPekerja} worker${opsi.from ? ` | fine-tune dari "${opsi.from}"` : ""}`);
 if (!asal && ukuran > tokenTarget / 2)
@@ -159,10 +163,26 @@ if (nPekerja > 1) {
       w.postMessage({ jenis: "init", config, bobot: bobotSAB, gradien: gSAB, token: tokenSAB, urutan: mode === "chat" ? trainChat : null, dropout, seed: angka("seed", 1) * 1000 + i });
     });
   }));
-} else if (dropout > 0) model.aturDropout(dropout, new Rng(angka("seed", 1) + 7).next);
+} else if (dropout > 0 && !pakaiGPU) model.aturDropout(dropout, new Rng(angka("seed", 1) + 7).next);
+
+// Mode GPU: bobot + state Adam pindah ke GPU; model CPU dipakai untuk contoh teks & checkpoint (disinkronkan saat perlu)
+let gpu: GPTCuda | null = null;
+if (pakaiGPU) {
+  const { GPTCuda: Kelas, gpuTersedia, FILE_LIB } = await import("../gpu/cuda.js");
+  if (!gpuTersedia()) { console.error(`--gpu: backend belum dikompilasi (${FILE_LIB}). Jalankan di server ber-GPU: bun run build-gpu`); process.exit(1); }
+  gpu = new Kelas(model, angka("batch", 16));
+  if (opsi.resume === "true" && asal?.adam) gpu.isiAdam(adam.m, adam.v);
+  console.log(`      GPU: ${gpu.info}${angka("batch", 16) < 32 ? "  (saran: --batch 64 agar GPU terpakai penuh)" : ""}`);
+}
+/** Ambil bobot (dan state Adam) dari GPU ke model CPU sebelum disimpan / dipakai membuat contoh. */
+const sinkron = (adamJuga = false) => { if (gpu) { gpu.ambilParam(P); if (adamJuga) gpu.ambilAdam(adam.m, adam.v); } };
+const urutanDari = (kerja: number[], sumber: Int32Array = trainTeks): UrutanGPU[] => kerja.map((s) =>
+  mode === "chat" ? trainChat[s] : { x: sumber.subarray(s, s + T), y: sumber.subarray(s + 1, s + T + 1) });
 
 const G = new Float64Array(ukuran);
+let langkahGPU = 0;
 async function hitungBatch(kerja: number[], skala: number): Promise<number> {
+  if (gpu) { gpu.nolGrad(); return gpu.langkah(urutanDari(kerja), skala, dropout, angka("seed", 1) * 100003 + ++langkahGPU); }
   G.fill(0);
   if (pekerja.length === 0) {
     let loss = 0;
@@ -186,6 +206,10 @@ const sumberVal = valTeks.length >= T + 2 ? valTeks : trainTeks;
 const jendelaVal = mode === "teks" ? Array.from({ length: Math.min(48, Math.floor((sumberVal.length - 1) / T)) }, (_, i) =>
   Math.floor((i * (sumberVal.length - T - 1)) / Math.max(1, Math.min(48, Math.floor((sumberVal.length - 1) / T))))) : [];
 function lossVal(): number {
+  if (gpu) {
+    if (mode === "chat") return gpu.loss(valChat) / Math.max(1, valChat.reduce((a, u) => a + u.y.filter((v) => v >= 0).length, 0));
+    return gpu.loss(urutanDari(jendelaVal, sumberVal)) / Math.max(1, jendelaVal.length * T);
+  }
   model.aturDropout(0);
   let s = 0, n = 0;
   if (mode === "chat") for (const u of valChat) { s += model.langkah(u.x, u.y, null, 1); n += u.y.filter((v) => v >= 0).length; }
@@ -195,6 +219,7 @@ function lossVal(): number {
 }
 
 function contoh(): string {
+  sinkron();
   model.aturDropout(0);
   let s: string;
   if (mode === "chat") s = ["halo", "apa kabar?"].map((q) => `"${q}" -> "${balas(model, tok, [], q, { seed: 1 }, hurufKecil)}"`).join("  |  ");
@@ -248,7 +273,7 @@ for (let langkah = langkahAwal + 1; langkahTotal === null || langkah <= langkahT
   nLoss++;
   tokenDiproses += mode === "chat" ? kerja.reduce((s, i) => s + trainChat[i].x.length, 0) : nToken;
   const lr = jadwalLR(langkah, langkahTotal ?? 1e9, lrMaks, warmup);
-  adam.langkah(G, langkah, lr);
+  if (gpu) gpu.adam(langkah, lr, adam.o); else adam.langkah(G, langkah, lr);
   pelacak.langkah(langkah, { lossTrain: jumlahLoss / nLoss, kecepatan: tokenDiproses / Math.max(1e-3, (performance.now() - waktuBlok) / 1000) });
 
   // Setelah 20 langkah, ukur kecepatan nyata dan tetapkan jumlah langkah sesuai anggaran waktu
@@ -270,6 +295,7 @@ for (let langkah = langkahAwal + 1; langkahTotal === null || langkah <= langkahT
     if (lv < terbaik - 1e-3) {
       terbaik = lv;
       tanpaKemajuan = 0;
+      sinkron(true);
       simpanGPT(nama, meta(langkah), P, adam);
       langkahSimpan = langkah;
     } else if (++tanpaKemajuan >= patience) {
@@ -283,6 +309,7 @@ for (let langkah = langkahAwal + 1; langkahTotal === null || langkah <= langkahT
   }
 }
 for (const { w } of pekerja) w.terminate();
+gpu?.tutup();
 if (dihentikan) {
   const lanjut = `bun run train-gpt -- ${opsi.dataset ? `--dataset ${opsi.dataset}` : `--data ${opsi.data}`} --name ${nama} --resume${opsi.minutes ? ` --minutes ${opsi.minutes}` : ""}${opsi.steps ? ` --steps ${opsi.steps}` : ""}`;
   pelacak.tutup("berhenti", `dihentikan di langkah ${dihentikan}; checkpoint terbaik di langkah ${langkahSimpan}`);

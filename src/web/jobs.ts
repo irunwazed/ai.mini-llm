@@ -13,7 +13,7 @@
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { bacaSemuaProgres, mintaBerhenti } from "../gpt/progress.js";
-import { LOKASI, SUMBER_MENTAH } from "../paths.js";
+import { folderSinkronSah, LOKASI, SUMBER_MENTAH } from "../paths.js";
 
 type Validasi =
   | { tipe: "angka"; min: number; max: number }
@@ -21,7 +21,8 @@ type Validasi =
   | { tipe: "teks"; maks: number }
   | { tipe: "pilihan"; nilai: string[] }
   | { tipe: "bendera" }
-  | { tipe: "sumber" };
+  | { tipe: "sumber" }
+  | { tipe: "folder" };
 export interface DefPerintah { judul: string; langkah: 0 | 1 | 2 | 3 | 4; opsi: Record<string, Validasi>; kunci?: (o: Record<string, string>) => string }
 
 const angka = (min: number, max: number): Validasi => ({ tipe: "angka", min, max });
@@ -29,12 +30,23 @@ const nama: Validasi = { tipe: "nama" }, bendera: Validasi = { tipe: "bendera" }
 
 /** DAFTAR PUTIH: nama script di package.json -> opsi yang boleh dikirim dari web. */
 export const PERINTAH: Record<string, DefPerintah> = {
+  "drive": {
+    judul: "Google Drive", langkah: 1,
+    opsi: { status: bendera, unggah: bendera, unduh: bendera, sinkron: bendera, folder: { tipe: "folder" }, kering: bendera, hapus: bendera, menang: { tipe: "pilihan", nilai: ["lokal", "drive"] } },
+    kunci: () => "drive",
+  },
+  "server": { judul: "Server training (status)", langkah: 3, opsi: { status: bendera }, kunci: () => "server" },
   "migrasi-data": { judul: "Pindahkan data ke lokasi baru", langkah: 0, opsi: { kering: bendera }, kunci: () => "migrasi" },
   "fetch-data": { judul: "Unduh Wikipedia", langkah: 1, opsi: { "target-mb": angka(1, 2000) }, kunci: () => "fetch-data" },
   "fetch-jdih": {
     judul: "Unduh dokumen JDIH BKN", langkah: 1,
     opsi: { batas: angka(0, 100000), judul: { tipe: "teks", maks: 100 }, tahun: angka(1945, 2100), kategori: { tipe: "teks", maks: 40 }, kering: bendera },
     kunci: () => "fetch-jdih",
+  },
+  "fetch-web": {
+    judul: "Ambil artikel web", langkah: 1,
+    opsi: { url: { tipe: "teks", maks: 500 }, rss: { tipe: "teks", maks: 500 }, batas: angka(0, 10000), kering: bendera },
+    kunci: () => "fetch-web",
   },
   "make-chat-data": { judul: "Buat data obrolan", langkah: 1, opsi: { konteks: angka(0, 100000) }, kunci: () => "obrolan" },
   "make-reader-data": { judul: "Buat data GPT pembaca", langkah: 1, opsi: { "dengan-aturan": bendera, maks: angka(100, 100000) }, kunci: () => "pembaca" },
@@ -50,11 +62,11 @@ export const PERINTAH: Record<string, DefPerintah> = {
     opsi: {
       dataset: nama, name: nama, resume: bendera, from: nama, size: { tipe: "pilihan", nilai: ["small", "medium", "besar"] },
       minutes: angka(1, 1440), steps: angka(1, 1_000_000), "eval-every": angka(5, 100000), batch: angka(1, 256),
-      lr: angka(0.00001, 0.1), dropout: angka(0, 0.9), patience: angka(1, 100), "keep-case": bendera,
+      lr: angka(0.00001, 0.1), dropout: angka(0, 0.9), patience: angka(1, 100), "keep-case": bendera, workers: angka(1, 64), gpu: bendera,
     },
     kunci: (o) => `model:${o.name ?? o.dataset}`,
   },
-  "train-reader": { judul: "Latih GPT pembaca", langkah: 3, opsi: { from: nama, name: nama, minutes: angka(1, 1440), steps: angka(1, 1_000_000) }, kunci: (o) => `model:${o.name ?? "reader"}` },
+  "train-reader": { judul: "Latih GPT pembaca", langkah: 3, opsi: { from: nama, name: nama, minutes: angka(1, 1440), steps: angka(1, 1_000_000), workers: angka(1, 64) }, kunci: (o) => `model:${o.name ?? "reader"}` },
   "eval": { judul: "Evaluasi chatbot aturan", langkah: 4, opsi: { rag: bendera } },
   "eval-chat": { judul: "Evaluasi percakapan", langkah: 4, opsi: { agent: bendera, rag: bendera } },
   "eval-reasoning": { judul: "Evaluasi penalaran", langkah: 4, opsi: {} },
@@ -115,6 +127,7 @@ export function validasi(perintah: string, opsi: Record<string, unknown>): { arg
     if (aturan.tipe === "nama" && !/^[\w.-]{1,40}$/.test(s)) return { galat: `--${k} hanya boleh huruf, angka, titik, minus, garis bawah (maks 40)` };
     if (aturan.tipe === "teks" && (s.length > aturan.maks || /[\r\n\0]/.test(s))) return { galat: `--${k} terlalu panjang / tidak valid` };
     if (aturan.tipe === "pilihan" && !aturan.nilai.includes(s)) return { galat: `--${k} harus salah satu: ${aturan.nilai.join(", ")}` };
+    if (aturan.tipe === "folder" && !s.split(",").every((x) => folderSinkronSah(x.trim()))) return { galat: `--${k} harus di dalam documents, data/mentah, data/siap, atau gpt-models` };
     if (aturan.tipe === "sumber" && !s.split(",").every((x) => x in SUMBER_MENTAH)) return { galat: `--${k} harus dari: ${Object.keys(SUMBER_MENTAH).join(", ")}` };
     argv.push(`--${k}`, s); bersih[k] = s;
   }

@@ -30,9 +30,14 @@
     "eval-reader": "bun src/commands/eval-reader.ts",
     "eval-konteks": "bun src/commands/eval-gpt-context.ts",
     "fetch-jdih": "bun src/commands/fetch-jdih.ts",
+    "fetch-web": "bun src/commands/fetch-web.ts",
     "status": "bun src/commands/status.ts",
     "migrasi-data": "bun src/commands/migrate-data.ts",
-    "siapkan-data": "bun src/commands/prepare-data.ts"
+    "siapkan-data": "bun src/commands/prepare-data.ts",
+    "drive": "bun src/commands/drive.ts",
+    "server": "bun src/commands/server.ts",
+    "build-gpu": "bun src/commands/build-gpu.ts",
+    "test-gpu": "bun src/commands/test-gpu.ts"
   },
   "dependencies": {
     "mammoth": "^1.13.0",

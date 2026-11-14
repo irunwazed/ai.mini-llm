@@ -118,27 +118,45 @@ interface ModelGPT { nama: string; model: GPT; tok: Tokenizer; hurufKecil: boole
 export class MesinChat {
   readonly aturan: Model;
   readonly wiki: Model | null;
-  readonly gpt: ModelGPT | null;
+  gpt: ModelGPT | null = null;
   readonly memori: Memori;
-  readonly pembaca: Pembaca | null;
+  pembaca: Pembaca | null = null;
+  /** true = model dipilih otomatis (terbaru), false = dipilih manual (--chat-gpt / panel web) */
+  gptOtomatis = true;
+  pembacaOtomatis = true;
   private readonly k: number;
 
   constructor(opsi: { folderModel?: string; folderWiki?: string; chatGpt?: string; k?: number; fileMemori?: string; pembaca?: string } = {}) {
     this.aturan = muatModel(opsi.folderModel ?? "model");
     const fw = opsi.folderWiki ?? "model-wiki";
     this.wiki = existsSync(join(fw, "istilah.json")) ? muatModel(fw) : null;
-    const nama = opsi.chatGpt ?? gptTerbaru("chat");
-    if (nama) {
-      const { meta, P } = muatGPT(nama);
-      this.gpt = { nama, model: new GPT(meta.config, P), tok: new Tokenizer(meta.bpe), hurufKecil: meta.hurufKecil, langkah: meta.langkah, lossVal: meta.lossValTerbaik };
-    } else this.gpt = null;
     this.memori = new Memori(opsi.fileMemori ?? "data/memory.json");
-    const namaPembaca = opsi.pembaca ?? gptTerbaru("pembaca");
-    if (namaPembaca) {
-      const { meta, P } = muatGPT(namaPembaca);
-      this.pembaca = { nama: namaPembaca, model: new GPT(meta.config, P), tok: new Tokenizer(meta.bpe), hurufKecil: meta.hurufKecil, ambang: meta.pembaca?.ambang ?? 0.5, f1: meta.pembaca?.f1 ?? 0 };
-    } else this.pembaca = null;
+    this.pakaiGPT(opsi.chatGpt ?? null, false);
+    this.pakaiPembaca(opsi.pembaca ?? null);
     this.k = opsi.k ?? 3;
+  }
+
+  /**
+   * Ganti GPT obrolan saat berjalan. null = model obrolan terbaru.
+   * `periksaMode` (bawaan true) menolak model yang bukan hasil fine-tune obrolan; dimatikan untuk --chat-gpt (perilaku lama).
+   */
+  pakaiGPT(nama: string | null, periksaMode = true): void {
+    const n = nama ?? gptTerbaru("chat");
+    if (!n) { this.gpt = null; this.gptOtomatis = true; return; }
+    const { meta, P } = muatGPT(n);
+    if (periksaMode && (meta.mode ?? "teks") !== "chat") throw new Error(`"${n}" bukan model obrolan (mode ${meta.mode ?? "teks"})`);
+    this.gpt = { nama: n, model: new GPT(meta.config, P), tok: new Tokenizer(meta.bpe), hurufKecil: meta.hurufKecil, langkah: meta.langkah, lossVal: meta.lossValTerbaik };
+    this.gptOtomatis = nama === null;
+  }
+
+  /** Ganti GPT pembaca (RAG) saat berjalan. null = pembaca terbaru. */
+  pakaiPembaca(nama: string | null): void {
+    const n = nama ?? gptTerbaru("pembaca");
+    if (!n) { this.pembaca = null; this.pembacaOtomatis = true; return; }
+    const { meta, P } = muatGPT(n);
+    if (meta.mode !== "pembaca") throw new Error(`"${n}" bukan model pembaca (mode ${meta.mode ?? "teks"})`);
+    this.pembaca = { nama: n, model: new GPT(meta.config, P), tok: new Tokenizer(meta.bpe), hurufKecil: meta.hurufKecil, ambang: meta.pembaca?.ambang ?? 0.5, f1: meta.pembaca?.f1 ?? 0 };
+    this.pembacaOtomatis = nama === null;
   }
 
   info() {
@@ -148,6 +166,7 @@ export class MesinChat {
       gpt: this.gpt ? { nama: this.gpt.nama, parameter: this.gpt.model.ukuran, lapisan: this.gpt.model.c.layers, dim: this.gpt.model.c.dim, konteks: this.gpt.model.c.context, langkah: this.gpt.langkah, lossVal: this.gpt.lossVal } : null,
       memori: this.memori.semua().length,
       pembaca: this.pembaca ? { nama: this.pembaca.nama, ambang: this.pembaca.ambang, f1: this.pembaca.f1 } : null,
+      gptOtomatis: this.gptOtomatis, pembacaOtomatis: this.pembacaOtomatis,
     };
   }
 

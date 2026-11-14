@@ -7,6 +7,8 @@
  *
  * API:
  *   GET    /api/info          ringkasan model yang dimuat (aturan, Wikipedia, GPT, memori)
+ *   POST   /api/model/pakai   { jenis: "obrolan"|"pembaca", nama|null } -> ganti GPT yang dipakai chat (null = terbaru;
+ *                              berlaku untuk seluruh server; hanya dari komputer ini)
  *   POST   /api/chat          { pesan, riwayat?, topik?, mode?, suhu? } -> Respons (jawaban + proses + jejak GPT)
  *   GET    /api/memori        daftar catatan memori
  *   POST   /api/memori        { teks }  -> simpan catatan baru (manual oleh pengguna)
@@ -22,6 +24,11 @@
  *   GET  /api/job              proses yang dijalankan dari web        POST /api/job { perintah, opsi }
  *   GET  /api/job/:id/log?dari=N   log berjalan                       POST /api/job/:id/hentikan
  *   POST /api/upload           multipart: tujuan=aturan|teks, berkas=…  (hanya dari komputer ini)
+ *   GET  /api/drive/status     status login Google Drive (tanpa token)   GET /api/drive/login -> ke halaman login Google
+ *   GET  /drive/login          isi POPUP login (persiapan client / ke Google)   GET /drive/selesai  hasil login di popup
+ *   GET  /api/drive/isi?path=  isi folder Drive vs lokal (penjelajah)   POST /api/drive/klien  simpan JSON client OAuth
+ *   POST /api/drive/logout     cabut akses Drive.  Google kembali ke "/?code=…&state=…" (redirect loopback)
+ *   GET  /api/server           alamat server training yang diatur (bun run server -- --atur …)
  *
  * Server tidak menyimpan riwayat percakapan: halaman mengirim riwayat & topik terakhir
  * di setiap pesan. Memori disimpan di server (data/memory.json).
@@ -36,6 +43,9 @@ import { daftarDataset, infoLokasi, sidikTokenizer } from "../gpt/prepared.js";
 import { LOKASI, lokasiBaca } from "../paths.js";
 import { bacaLog, daftarJob, hentikanJob, mulaiJob, PERINTAH } from "../web/jobs.js";
 import type { MetaGPT } from "../gpt/checkpoint.js";
+import { adaLoginTertunda, buatUrlLogin, logout as logoutDrive, PETUNJUK_KLIEN, selesaikanLogin, simpanKlien, statusLogin } from "../cloud/google-auth.js";
+import { jelajahDrive, pathJelajahSah } from "../cloud/browse.js";
+import { halamanPersiapan, halamanSelesai } from "../web/drive-pages.js";
 import { argumen } from "./args.js";
 
 const { folderModel, k, opsi } = argumen();
@@ -82,15 +92,80 @@ const galat = (pesan: string, status = 400) => Response.json({ error: pesan }, {
 const lokal = (req: Request): boolean => { const ip: string = server.requestIP(req)?.address ?? ""; return ip === "127.0.0.1" || ip === "::1" || ip.endsWith(":127.0.0.1"); };
 const tolak = (): Response => galat("Hanya boleh dari komputer yang menjalankan server.", 403);
 
+const portServer = (): number => server.port ?? port;
 const server = Bun.serve({
   port,
   hostname: opsi.host ?? "127.0.0.1",
   maxRequestBodySize: 200 * 1024 * 1024,
   routes: {
-    "/": () => html(HALAMAN),
+    "/": async (req) => {
+      // kembalian login Google Drive (redirect_uri = http://127.0.0.1:<port>/)
+      const u = new URL(req.url), state = u.searchParams.get("state");
+      if (adaLoginTertunda(state) && lokal(req)) {
+        const err = u.searchParams.get("error"), code = u.searchParams.get("code");
+        let pesan = "berhasil";
+        try { if (err || !code) throw new Error(err ?? "tidak ada kode"); await selesaikanLogin(state!, code); }
+        catch (e) { pesan = "gagal: " + (e as Error).message; }
+        return Response.redirect(`/drive/selesai?hasil=${encodeURIComponent(pesan)}`, 302);
+      }
+      return html(HALAMAN);
+    },
+    // ---- jendela popup login Google Drive
+    "/drive/login": (req): Response => {
+      if (!lokal(req)) return tolak();
+      if (!statusLogin().klien) return new Response(halamanPersiapan(), { headers: { "content-type": "text/html; charset=utf-8" } });
+      try { return Response.redirect(buatUrlLogin(`http://127.0.0.1:${portServer()}/`).url, 302); }
+      catch (e) { return new Response(halamanSelesai("gagal: " + (e as Error).message), { headers: { "content-type": "text/html; charset=utf-8" } }); }
+    },
+    "/drive/selesai": (req) => new Response(halamanSelesai(new URL(req.url).searchParams.get("hasil")?.slice(0, 400) ?? "gagal: tidak ada hasil"), { headers: { "content-type": "text/html; charset=utf-8" } }),
+    "/api/drive/klien": {
+      POST: async (req) => {
+        if (!lokal(req)) return tolak();
+        const r = simpanKlien(await req.text(), new URL(req.url).searchParams.get("ganti") === "1");
+        return "galat" in r ? galat(r.galat) : Response.json(r);
+      },
+    },
+    "/api/drive/isi": async (req) => {
+      if (!lokal(req)) return tolak();
+      const path = (new URL(req.url).searchParams.get("path") ?? "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+      if (!pathJelajahSah(path)) return galat("Folder tidak boleh dijelajah.");
+      try { return Response.json(await jelajahDrive(path)); }
+      catch (e) { return galat((e as Error).message, 502); }
+    },
+    "/api/gpu": async () => {
+      const { gpuTersedia } = await import("../gpu/cuda.js");
+      return Response.json({ ada: gpuTersedia() });
+    },
+    "/api/drive/status": () => Response.json({ ...statusLogin(), petunjuk: statusLogin().klien ? null : PETUNJUK_KLIEN }),
+    "/api/drive/login": (req): Response => {
+      if (!lokal(req)) return tolak();
+      try { return Response.redirect(buatUrlLogin(`http://127.0.0.1:${portServer()}/`).url, 302); }
+      catch (e) { return galat((e as Error).message); }
+    },
+    "/api/drive/logout": { POST: async (req) => (lokal(req) ? Response.json({ ok: await logoutDrive() }) : tolak()) },
+    "/api/server": (req) => {
+      const f = join(LOKASI.rahasia, "server.json");
+      if (!existsSync(f)) return Response.json({ ada: false });
+      const sv = JSON.parse(readFileSync(f, "utf8")) as { tujuan: string; port: number };
+      return Response.json(lokal(req) ? { ada: true, tujuan: sv.tujuan, port: sv.port } : { ada: true });
+    },
     "/latih": () => html(HALAMAN_LATIH),
     "/api/data": () => Response.json(petaData()),
     "/api/model": () => Response.json(daftarModel()),
+    "/api/model/pakai": {
+      POST: async (req) => {
+        if (!lokal(req)) return tolak();
+        const b = (await req.json().catch(() => ({}))) as { jenis?: string; nama?: string | null };
+        const nama = b.nama ? String(b.nama) : null;
+        const mode = b.jenis === "obrolan" ? "chat" : b.jenis === "pembaca" ? "pembaca" : null;
+        if (!mode) return galat("jenis harus obrolan atau pembaca");
+        if (nama && !daftarModel().some((m) => m.nama === nama && m.mode === mode)) return galat(`model ${mode === "chat" ? "obrolan" : "pembaca"} "${nama}" tidak ditemukan`);
+        try {
+          if (mode === "chat") mesin.pakaiGPT(nama); else mesin.pakaiPembaca(nama);
+        } catch (e) { return galat((e as Error).message); }
+        return Response.json(mesin.info());
+      },
+    },
     "/api/dataset": () => Response.json(daftarDataset()),
     "/api/perintah": () => Response.json(PERINTAH, { headers: {} }),
     "/api/job": {

@@ -19,6 +19,8 @@ Setiap langkah bisa dijalankan dengan dua cara:
 7. [Kamus, agent, penalaran, memori (tanpa training)](#7-kamus-agent-penalaran-memori)
 8. [Format file data](#8-format-file-data)
 9. [Hal yang sering salah](#9-hal-yang-sering-salah)
+10. [Google Drive: simpan, unggah, unduh, sinkron](#10-google-drive)
+11. [Training di server GPU (packet.ai)](#11-training-di-server-gpu-packetai)
 
 ---
 
@@ -27,7 +29,7 @@ Setiap langkah bisa dijalankan dengan dua cara:
 ```
  LANGKAH 1: AMBIL DATA            LANGKAH 2: SIAPKAN           LANGKAH 3: LATIH                 LANGKAH 4/5
  ─────────────────────            ──────────────────           ───────────────                  ───────────
- fetch-jdih / upload  → documents/ ──────────────────────────→ train        → model/       ─┐
+ fetch-jdih / fetch-web / upload → documents/ ─────────────────→ train        → model/       ─┐
  fetch-data           → data/mentah/wikipedia/ ─┬────────────→ index-wiki   → model-wiki/  ─┤
  upload / salin       → data/mentah/teks/      ─┤ siapkan-data                              ├→ eval*, chat, web
  make-chat-data       → data/mentah/obrolan/   ─┴→ data/siap/<dataset>/ → train-gpt → gpt-models/<model>/ ─┤
@@ -36,7 +38,7 @@ Setiap langkah bisa dijalankan dengan dua cara:
 
 | Lokasi | Isi | Dibuat oleh | Dipakai oleh |
 |---|---|---|---|
-| `documents/` | dokumen aturan PDF/DOCX/TXT/MD (subfolder `jdih/` = unduhan JDIH, `upload/` = upload web, `samples/` = contoh untuk soal uji) | `fetch-jdih`, upload, salin manual | `train`, `siapkan-data --sumber aturan` |
+| `documents/` | dokumen aturan PDF/DOCX/TXT/MD (subfolder `jdih/` = unduhan JDIH, `web/` = artikel fetch-web, `upload/` = upload web, `samples/` = contoh untuk soal uji) | `fetch-jdih`, `fetch-web`, upload, salin manual | `train`, `siapkan-data --sumber aturan` |
 | `data/mentah/wikipedia/wiki-id.txt` (+ `sumber.txt` daftar judul) | teks Wikipedia Indonesia | `fetch-data` | `index-wiki`, `siapkan-data --sumber wikipedia`, `make-reader-data` |
 | `data/mentah/teks/*.txt` | teks bahasa Indonesia milik Anda | upload, salin manual | `siapkan-data --sumber teks` |
 | `data/mentah/obrolan/chat-id.jsonl` | percakapan latih (biasa + berkonteks) | `make-chat-data` | `siapkan-data --sumber obrolan` |
@@ -49,7 +51,7 @@ Setiap langkah bisa dijalankan dengan dua cara:
 | `data/synonyms.txt`, `data/slang.txt` | kamus (bukan hasil training) | ditulis manual | chatbot |
 | `evaluation/*.jsonl` | soal uji | ditulis manual | `eval*` |
 
-Semua lokasi ditentukan di satu tempat: `src/paths.ts`. Isi folder `data/mentah/`, `data/siap/`, `documents/upload/`, `documents/jdih/`, `model*/`, `gpt-models/`, `progres/` tidak di-commit.
+Semua lokasi ditentukan di satu tempat: `src/paths.ts`. Isi folder `data/mentah/`, `data/siap/`, `documents/upload/`, `documents/jdih/`, `documents/web/`, `model*/`, `gpt-models/`, `progres/` tidak di-commit.
 
 **Pindah dari struktur lama.** Versi lama menyimpan `data/wiki-id.txt`, `data/wiki-id.sources.txt`, `data/chat-id.jsonl`, `data/reader-id.jsonl`. Pindahkan sekali:
 
@@ -71,6 +73,7 @@ File yang baru diubah < 2 menit lalu (mis. sedang ditulis `fetch-data` lama) dil
 | Cara | Terminal | Web (/latih ①) |
 |---|---|---|
 | Unduh JDIH BKN | `bun run fetch-jdih` (→ `documents/jdih/`) | kartu **Unduh dokumen aturan JDIH BKN** |
+| Ambil artikel web | `bun run fetch-web` (→ `documents/web/`) | kartu **Ambil artikel web** |
 | Upload | — | kartu **Upload file**, tujuan **Dokumen aturan** (→ `documents/upload/`) |
 | Manual | salin file ke `documents/` (boleh bersubfolder) | — |
 
@@ -86,6 +89,23 @@ bun run fetch-jdih -- --kering --batas 20       # daftar saja, tanpa unduh
 ```
 
 Aman dijalankan ulang: id di `documents/jdih/manifest.jsonl` dilewati, file yang ada tidak ditimpa (kecuali `--ganti`), dan antrean crawler tersimpan di `.crawl-state.json`.
+
+→ Lanjut ke **langkah 3: latih chatbot aturan** (`bun run train`).
+
+### Artikel web (berita / konten situs apa pun)
+
+`fetch-web` mengambil isi halaman dari situs apa pun (berita, blog, situs resmi) ke `documents/web/<host>/` sebagai `.md` per artikel (judul, sumber, tanggal, isi — menu/iklan dibuang). Karena di `documents/`, hasilnya ikut terbaca `bun run train`.
+
+```
+bun run fetch-web -- https://www.bkn.go.id/category/publikasi/berita/ --batas 10
+                                          # halaman daftar ditelusuri; artikel diekstrak sendiri
+bun run fetch-web -- --url https://news.detik.com/berita/d-8750810/contoh
+bun run fetch-web -- --rss https://news.detik.com/rss --batas 30    # feed RSS/Atom (detik, CNN, WordPress)
+bun run fetch-web -- --daftar urls.txt --kering                     # batch dari file, pratinjau tanpa simpan
+bun run fetch-web                    # tanpa argumen: lanjutkan sisa antrean run sebelumnya
+```
+
+Metadata dari JSON-LD/OpenGraph/`<h1>`; isi dari blok `<article>` atau paragraf utama. `--batas` = artikel baru per sesi (bawaan 20), `--ganti` menimpa file. Alat menghormati `robots.txt` tiap situs, menjeda 1 detik antar permintaan, dan aman dijalankan ulang (manifest + state resume di `documents/web/`). Web: kartu **Ambil artikel web**.
 
 → Lanjut ke **langkah 3: latih chatbot aturan** (`bun run train`).
 
@@ -291,6 +311,8 @@ bun run web -- --host 0.0.0.0         # bisa dibuka komputer lain di jaringan
 
 Bawaannya server hanya mendengar `127.0.0.1` (komputer ini saja). Dengan `--host 0.0.0.0`, komputer lain bisa chat dan melihat progres, tetapi **menjalankan proses, menghentikan, dan upload tetap hanya dari komputer ini**.
 
+**Ganti model tanpa restart.** Di header halaman chat ada pilihan **GPT obrolan** dan **GPT pembaca**: "terbaru (otomatis)" atau model tertentu hasil training (nama · langkah · loss val). Daftarnya diperbarui saat pilihan dibuka, jadi model yang baru selesai dilatih langsung muncul. Pilihan berlaku untuk seluruh server dan hanya bisa diubah dari komputer yang menjalankan server. Model hasil pretraining (`mode teks`) tidak bisa dipilih sebagai GPT obrolan; fine-tune dulu.
+
 Pilihan **Mode** di web: Otomatis, Hanya aturan, Hanya Wikipedia, Hanya GPT, Hanya penalaran, RAG, Agent. Klik jawaban untuk melihat panel **cara kerja**: niat, langkah agent, hasil setiap alat, curl & respons internet, peta attention GPT, dan perhatian ke konteks.
 
 Setelah melatih model baru atau mengubah kode, matikan lalu jalankan ulang `bun run web`. Proses yang dijalankan dari web **tetap berjalan** walau server web dimatikan. Setelah web dinyalakan lagi, progres dan lognya muncul kembali.
@@ -299,7 +321,7 @@ Setelah melatih model baru atau mengubah kode, matikan lalu jalankan ulang `bun 
 
 ## 6. Memantau & menghentikan proses
 
-Proses panjang (`fetch-data`, `fetch-jdih`, `siapkan-data`, `train-gpt`, `train-reader`) mencatat progresnya ke `progres/<jenis>-<nama>.json`. Proses yang dijalankan dari web juga punya log lengkap di `progres/log/<id>.log` (daftarnya di `progres/jobs.json`).
+Proses panjang (`fetch-data`, `fetch-jdih`, `fetch-web`, `siapkan-data`, `train-gpt`, `train-reader`) mencatat progresnya ke `progres/<jenis>-<nama>.json`. Proses yang dijalankan dari web juga punya log lengkap di `progres/log/<id>.log` (daftarnya di `progres/jobs.json`).
 
 **Baris progres di terminal:**
 
@@ -410,6 +432,180 @@ gimana|gmn|gmana = bagaimana
 - **`--resume` dengan dataset bertokenizer lain.** Ditolak; siapkan dataset dengan `--tokenizer-dari <model>`.
 - **Menghapus `documents/samples/`.** `bun run eval` rusak, karena soal uji merujuk dokumen contoh itu.
 - **Model GPT lama + fitur baru.** Kartu konteks hanya bekerja di model yang dipretrain ulang (`wiki2` → `chat2`).
-- **Web masih memakai kode/model lama.** Matikan lalu jalankan ulang `bun run web`.
+- **Web masih memakai kode lama.** Matikan lalu jalankan ulang `bun run web`. Untuk model GPT baru tidak perlu: pilih di header halaman chat.
+- **`Failed to spawn worker thread` / proses berhenti tanpa pesan saat training.** RAM tidak cukup: setiap worker memuat salinan data. Kecilkan `--workers` (mis. 4), atau isi kolom **worker** di form latih web.
+- **Artikel berita/web dimasukkan ke `documents/`.** Ikut terindeks sebagai "aturan", sehingga obrolan dan pertanyaan aturan bisa dijawab dengan kalimat berita. Simpan teks non-aturan di `data/mentah/teks/` (untuk GPT), bukan di `documents/`.
 - **File masih di lokasi lama.** Jalankan `bun run migrasi-data` (bagian 0).
+- **File diunggah manual lewat drive.google.com tidak muncul.** Aplikasi hanya melihat file buatannya sendiri (izin `drive.file`). Unggah lewat `bun run drive -- --unggah` atau Upload di `/latih`.
+- **Menyewa GPU untuk training ini.** GPU tidak dipakai; yang menentukan kecepatan adalah jumlah core CPU (bagian 11).
 - **(Pengembang) Flag CLI boolean baru.** Wajib didaftarkan di `FLAG` (`src/commands/args.ts`). Perintah yang boleh dijalankan web didaftarkan di `PERINTAH` (`src/web/jobs.ts`).
+
+---
+
+## 10. Google Drive
+
+Google Drive dipakai sebagai tempat simpan **dokumen, data mentah, dataset siap latih, dan model GPT**. Data bisa dipindah antara laptop, server training, dan Drive.
+
+| Lokal | Di Drive (folder **"LLM dari Nol"**) |
+|---|---|
+| `documents/` (PDF/DOCX/TXT/MD) | `LLM dari Nol/documents/` |
+| `data/mentah/` | `LLM dari Nol/data/mentah/` |
+| `data/siap/` | `LLM dari Nol/data/siap/` |
+| `gpt-models/` (kecuali `cache/`) | `LLM dari Nol/gpt-models/` |
+
+**Akses terbatas.** Aplikasi memakai izin `drive.file`: ia hanya melihat file yang ia unggah sendiri. File lain di Drive Anda tidak terbaca. Konsekuensinya, file yang Anda taruh manual lewat drive.google.com **tidak terlihat** oleh aplikasi. Masukkan file lewat aplikasi: salin ke folder lokal lalu unggah, atau pakai Upload di `/latih` dengan centang "juga unggah ke Google Drive".
+
+### Persiapan (sekali, ±5 menit)
+
+**Lewat web (paling mudah):** di `/latih`, klik **☁ Hubungkan Google Drive** (atau **☁ Google Drive** di menu atas). Jendela popup memandu langkah-langkah di bawah. Di langkah terakhir, pilih file JSON yang diunduh; file itu disimpan otomatis ke `.rahasia/google-oauth.json`, lalu popup langsung lanjut ke login Google.
+
+**Manual:**
+
+
+1. Buka https://console.cloud.google.com/ dan buat project, mis. "llm-dari-nol".
+2. **APIs & Services → Library** → aktifkan **Google Drive API**.
+3. **OAuth consent screen** → External → isi nama aplikasi → tambahkan email Anda di **Test users**.
+4. **Credentials → Create credentials → OAuth client ID** → Application type **Desktop app** → **Download JSON**.
+5. Simpan file itu sebagai `.rahasia/google-oauth.json` di folder proyek. Folder `.rahasia/` tidak di-commit. Alternatifnya, set env `GOOGLE_CLIENT_ID` dan `GOOGLE_CLIENT_SECRET`.
+
+### Login
+
+| Terminal | Web (/latih ①, kartu Google Drive) |
+|---|---|
+| `bun run drive -- --login` (browser terbuka otomatis) | tombol **☁ Hubungkan Google Drive** → login di **jendela popup** → popup menutup sendiri, kartu langsung menampilkan isi Drive |
+| di server tanpa browser: `bun run drive -- --login --tempel`, buka alamatnya di laptop, lalu tempel alamat akhir dari address bar | — |
+| `bun run drive -- --logout` (mencabut akses) | tombol **Logout** |
+
+Google mungkin menampilkan "aplikasi belum diverifikasi". Itu normal untuk aplikasi pribadi; pilih **Lanjutkan**. Token disimpan di `.rahasia/google-token.json` dan diperbarui otomatis. Jangan bagikan file ini.
+
+### Menjelajah Drive dari web
+
+Setelah terhubung, kartu Google Drive menampilkan isi folder **"LLM dari Nol"**:
+
+- klik folder untuk masuk; remah roti di atas untuk kembali;
+- setiap file diberi status terhadap folder lokal yang sama: **sama**, **beda**, **hanya di Drive**, **hanya di lokal**, atau **belum diunggah**;
+- **Buka di Google Drive ↗** membuka folder yang sedang dilihat di drive.google.com; ↗ per file membuka file itu;
+- tombol **↑ Unggah ke Drive**, **↓ Unduh ke lokal**, dan **⇅ Sinkron (lihat rencana)** berlaku untuk folder yang sedang dibuka. Prosesnya tampil di panel Proses, dan daftar diperbarui setelah selesai;
+- beberapa folder sekaligus, pilihan konflik, dan "ikut hapus" ada di **Opsi lanjutan**.
+
+### Unggah, unduh, sinkron
+
+```
+bun run drive -- --status                                  # login + per folder: lokal vs Drive, berapa yang belum sama
+bun run drive -- --unggah --folder documents               # lokal -> Drive (file baru/berubah saja)
+bun run drive -- --unduh --folder data/siap/obrolan-v1     # Drive -> lokal
+bun run drive -- --sinkron                                 # dua arah, semua folder
+bun run drive -- --sinkron --kering                        # lihat rencana dulu, tanpa mengubah apa pun
+```
+
+Tanpa `--folder`, keempat folder diproses. `--folder` boleh subfolder (`gpt-models/chat2`) atau beberapa sekaligus, dipisah koma. Web: pilih **Aksi** dan **Folder**, lalu **Jalankan**. Bawaannya "lihat rencana dulu" tercentang. Hapus centang untuk benar-benar memindahkan.
+
+**Aturan sinkron.** Setiap file dibandingkan memakai md5 dengan catatan sinkron terakhir (`.rahasia/drive-sinkron.json`):
+
+| Keadaan | Tindakan |
+|---|---|
+| berubah di lokal saja | unggah |
+| berubah di Drive saja | unduh |
+| berubah di **keduanya** | **konflik**: tidak ada yang ditimpa; versi Drive disimpan sebagai `nama (drive).ext`. Pilih salah satu, atau ulangi dengan `--menang lokal` / `--menang drive` |
+| dihapus di satu sisi | hanya dilaporkan (`? cek`). Ikut dihapus di sisi lain **hanya** dengan `--hapus`: file lokal dipindah ke `.rahasia/sampah/`, file Drive ke tempat sampah Drive |
+| baru diubah < 2 menit lalu | dilewati (mungkin sedang ditulis proses lain) |
+
+Setiap unggahan/unduhan diperiksa md5-nya. File besar diunggah per 8 MB dan bisa dilanjutkan jika koneksi putus. Proses bisa dihentikan dengan aman (Ctrl+C / tombol Hentikan) dan dijalankan ulang; file yang sudah sama dilewati.
+
+Setelah mengunduh dokumen aturan baru: `bun run train`. Setelah mengunduh data mentah baru: siapkan ulang dataset (langkah 2).
+
+---
+
+## 11. Training di server GPU (packet.ai)
+
+Training GPT bisa dijalankan di pod GPU sewaan (mis. **RTX 5090** di packet.ai) memakai **backend CUDA tulisan sendiri** (`src/gpu/gpt.cu`, tanpa cuBLAS/cuDNN/library ML). Kode, chatbot, dan model tetap sama; yang dipindah hanya perhitungan training.
+
+```
+ LAPTOP                              GOOGLE DRIVE ("LLM dari Nol")            POD packet.ai (RTX 5090)
+ siapkan-data -> data/siap/X ──unggah──> data/siap/X ──────unduh──────> data/siap/X
+                                                                         train-gpt --dataset X --gpu   (tmux, jalan terus)
+ gpt-models/Y <──────unduh─────── gpt-models/Y <──unggah (otomatis saat selesai)── gpt-models/Y
+ chat / web memakai model Y
+```
+
+- Kode dikirim lewat SSH.
+- Data & model lewat Google Drive (login Drive laptop disalin ke pod, jadi pod tidak perlu login lagi), atau langsung lewat scp (`--lewat scp`).
+- Pod hanya untuk menghitung. Matikan setelah selesai, karena ditagih per jam.
+
+### 1. Kunci SSH (sekali)
+
+Sesuai docs packet.ai: setiap pod punya **Host** (IP), **Port** unik (30000–32767), **Username** `ubuntu`, dan **Password**. Semuanya ada di **Compute → Running → Terminal** ("SSH connection details"). Kunci SSH di akun **hanya terpasang di pod yang dibuat SESUDAH kunci ditambahkan**.
+
+```
+bun run server -- --buat-kunci          # membuat ~/.ssh/packet_ai (ed25519) dan mencetak kunci PUBLIK
+```
+
+Tambahkan kunci publik itu ke akun, pilih salah satu:
+
+- **Console:** Account → API keys → bagian **SSH keys** → **Add key** → tempel.
+- **Otomatis lewat API:** tulis `PACKET_API_KEY=pk_live_…` di file `.env` (sudah di-gitignore; jangan dibagikan), lalu `bun run server -- --buat-kunci --daftarkan`.
+
+Untuk pod yang **sudah berjalan** sebelum kunci ditambahkan, cukup sekali memakai password pod: `bun run server -- --pasang-kunci`.
+
+### 2. Hubungkan & siapkan pod
+
+```
+bun run server -- --atur ubuntu@<Host> --port <Port>   # dari Terminal page; juga menulis "Host packet-llm" di ~/.ssh/config
+bun run server -- --uji                                # cek SSH tanpa password + CPU/RAM/GPU/CUDA
+bun run server -- --siapkan                            # bun + tmux, kirim kode, login Drive, pasang CUDA toolkit
+                                                       #   jika perlu, kompilasi backend GPU, lalu cek
+bun run server -- --perintah test-gpu                  # uji GPU vs CPU (wajib LULUS) + benchmark token/detik
+```
+
+- `--atur` membuang host key lama untuk host:port itu (pod baru bisa mendapat host:port yang pernah dipakai pod lain).
+- Setelah `--atur`, `ssh packet-llm` dan **VS Code Remote SSH** (Connect to Host → `packet-llm`) juga langsung bisa dipakai.
+- Setelah mengubah kode di laptop: `bun run server -- --kirim-kode`. Jika `src/gpu/gpt.cu` berubah, jalankan juga `--perintah build-gpu` dan `--perintah test-gpu`.
+
+### 3. Melatih
+
+```
+bun run server -- --latih -- --dataset wiki-v1 --name wiki3 --size besar --batch 64 --minutes 240
+bun run server -- --latih -- --dataset obrolan-v1 --from wiki3 --name chat3 --batch 64 --steps 3000 --eval-every 200
+bun run server -- --latih -- --dataset wiki-v2 --name wiki3 --resume --batch 64 --minutes 240
+```
+
+- `--gpu` ditambahkan otomatis jika pod punya GPU; paksa CPU dengan `--cpu`. Argumen setelah `--` kedua sama dengan `train-gpt`.
+- Data yang dibutuhkan diunggah ke Drive dari laptop, lalu diunduh pod. Training berjalan di tmux `latih-<nama>`, dan model otomatis diunggah ke Drive setiap kali selesai/berhenti.
+- **Batch:** GPU baru terpakai penuh dengan batch besar (64–256). Jika memori GPU kurang, muncul pesan "kecilkan --batch".
+- GPU memakai float32; hasil checkpoint tetap format yang sama, jadi bisa dilanjutkan (`--resume`) di CPU maupun GPU.
+- GPT pembaca (`train-reader`) belum memakai GPU (`--latih --jenis reader` berjalan di CPU pod).
+
+### 4. UI (chat + /latih) di pod
+
+```
+bun run server -- --web              # web di pod (port 3100, hanya 127.0.0.1) + terowongan SSH -> buka http://localhost:3100/latih
+bun run server -- --web --hentikan   # matikan web di pod
+```
+
+- Web di pod **tidak terbuka ke internet**. Laptop membukanya lewat port forwarding SSH (`ssh -L 3100:localhost:3100`), sama seperti cara Jupyter di docs packet.ai.
+- Selama jendela terminal itu terbuka, `http://localhost:3100/latih` adalah halaman Latih milik pod. Semua tombol (unduh data, siapkan, **latih di GPU**, evaluasi, Google Drive) berjalan di pod.
+- Ctrl+C hanya menutup terowongan; web dan training di pod tetap berjalan.
+- Jika `model/` belum ada di pod, `bun run train` dijalankan dulu otomatis (indeks chatbot dari dokumen di pod).
+
+### 5. Memantau, menghentikan, mengambil hasil
+
+```
+bun run server -- --status               # progres semua proses di pod + tmux + beban CPU/RAM
+bun run server -- --log wiki3 --ikuti    # ekor log (Ctrl+C keluar dari tampilan; training tetap jalan)
+bun run server -- --hentikan wiki3       # berhenti dengan aman (checkpoint disimpan)
+bun run server -- --ambil wiki3          # model ke laptop (dari Drive, atau --lewat scp)
+```
+
+Tambahkan `--kering` ke perintah mana pun untuk melihat perintah ssh/scp dan skripnya tanpa menjalankan. Setelah `--ambil`, pilih model itu di header halaman chat (GPT obrolan) atau jalankan `eval-konteks`.
+
+**Hemat biaya:** setelah model terambil, matikan pod di Compute → Running (pod baru nanti cukup `--atur` + `--siapkan` lagi; data & model aman di Drive).
+
+### Troubleshooting (dari docs packet.ai)
+
+| Pesan | Artinya | Tindakan |
+|---|---|---|
+| `Permission denied (publickey,password)` | kunci belum terpasang di pod ini | `--pasang-kunci` (pod sudah jalan sebelum kunci ditambahkan) |
+| `Connection refused / timed out` | pod belum running, atau host:port berubah | salin ulang Host/Port dari Terminal page, lalu `--atur` |
+| `REMOTE HOST IDENTIFICATION HAS CHANGED` | pod baru di host:port lama | `--atur` lagi (host key lama dibuang otomatis) |
+| `memori GPU tidak cukup` | batch × konteks terlalu besar | kecilkan `--batch` |
+| `test-gpu` GAGAL | hasil GPU berbeda dengan CPU | jangan latih dengan `--gpu`; laporkan keluarannya |

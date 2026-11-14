@@ -11,3 +11,7 @@ documents/jdih/
 data/mentah/
 data/siap/
 documents/upload/
+documents/web/
+.rahasia/
+.env
+build/

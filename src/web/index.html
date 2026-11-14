@@ -15,6 +15,8 @@
   header { padding: 10px 20px; border-bottom: 1px solid var(--line); background: var(--panel); display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
   header h1 { font-size: 16px; margin: 0; }
   header .info { color: var(--muted); font-size: 12.5px; }
+  header select.model { max-width: 190px; }
+  .msg.sistem { align-self: center; font-size: 12px; color: var(--muted); background: transparent; border: 1px dashed var(--line); padding: 4px 12px; border-radius: 999px; }
   header .kontrol { margin-left: auto; display: flex; gap: 10px; align-items: center; font-size: 13px; flex-wrap: wrap; }
   select, input[type=range] { font: inherit; }
   .tombol { font: inherit; font-size: 13px; padding: 4px 10px; border: 1px solid var(--line); background: var(--bg); border-radius: 8px; cursor: pointer; }
@@ -145,6 +147,12 @@
         <option value="rag">RAG (GPT pembaca)</option>
       </select>
     </label>
+    <label title="GPT obrolan hasil fine-tune yang dipakai untuk membalas obrolan (lihat halaman Data & training)">GPT obrolan
+      <select id="pilihGPT" class="model" data-jenis="obrolan"><option>memuat…</option></select>
+    </label>
+    <label title="GPT pembaca (RAG) yang dipakai mode RAG / Agent">GPT pembaca
+      <select id="pilihPembaca" class="model" data-jenis="pembaca"><option>memuat…</option></select>
+    </label>
     <label title="Suhu sampling GPT: kecil = konsisten, besar = acak">Suhu GPT <input type="range" id="suhu" min="0.1" max="1.5" step="0.1" value="0.4"> <span id="suhuNilai">0.4</span></label>
     <button class="tombol" id="salin" title="Salin seluruh percakapan + proses sebagai teks, untuk ditempel saat minta perbaikan">Salin percakapan</button>
     <button class="tombol" id="unduh" title="Unduh semua data mentah (termasuk matriks) sebagai JSON">Unduh JSON</button>
@@ -209,6 +217,45 @@ function muatInfo() {
   });
 }
 muatInfo();
+
+// ---------- ganti model hasil training ----------
+async function isiPilihanModel() {
+  const [daftar, info] = await Promise.all([fetch("/api/model").then((r) => r.json()), fetch("/api/info").then((r) => r.json())]);
+  for (const [sel, mode, kini, otomatis] of [[$("#pilihGPT"), "chat", info.gpt?.nama, info.gptOtomatis], [$("#pilihPembaca"), "pembaca", info.pembaca?.nama, info.pembacaOtomatis]]) {
+    const model = daftar.filter((m) => m.mode === mode);
+    // dibangun ulang hanya jika isinya berubah (membangun ulang saat dropdown dibuka bisa menutupnya)
+    const sidik = JSON.stringify([model.map((m) => [m.nama, m.langkah, m.lossVal]), kini, otomatis]);
+    if (sel.dataset.sidik === sidik) continue;
+    sel.dataset.sidik = sidik;
+    sel.innerHTML = "";
+    if (!model.length) { sel.append(el("option", "", "belum ada")); sel.disabled = true; continue; }
+    sel.disabled = false;
+    const oto = el("option", "", `terbaru (otomatis)${otomatis && kini ? ` · ${kini}` : ""}`); oto.value = ""; sel.append(oto);
+    for (const m of model) {
+      const o = el("option", "", `${m.nama} · langkah ${m.langkah}${m.lossVal !== undefined && m.lossVal !== null ? ` · loss val ${Number(m.lossVal).toFixed(2)}` : ""}`);
+      o.value = m.nama; sel.append(o);
+    }
+    sel.value = otomatis ? "" : (kini ?? "");
+  }
+}
+for (const sel of [$("#pilihGPT"), $("#pilihPembaca")]) {
+  sel.addEventListener("focus", () => { if (!sel.dataset.sibuk) isiPilihanModel(); });
+  sel.addEventListener("change", async () => {
+    sel.dataset.sibuk = "1"; sel.disabled = true;
+    try {
+      const r = await fetch("/api/model/pakai", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jenis: sel.dataset.jenis, nama: sel.value || null }) });
+      const d = await r.json();
+      if (!r.ok) { toast(d.error ?? "gagal mengganti model"); }
+      else {
+        const nama = sel.dataset.jenis === "obrolan" ? d.gpt?.nama : d.pembaca?.nama;
+        tambah(el("div", "msg sistem", `Sekarang memakai GPT ${sel.dataset.jenis} ${nama ?? "—"}${sel.value ? "" : " (terbaru, otomatis)"}`));
+      }
+    } catch (e) { toast("gagal mengganti model: " + e.message); }
+    delete sel.dataset.sibuk; sel.disabled = false;
+    muatInfo(); isiPilihanModel();
+  });
+}
+isiPilihanModel();
 $("#suhu").oninput = () => ($("#suhuNilai").textContent = $("#suhu").value);
 for (const c of CONTOH) { const b = el("button", "", c); b.type = "button"; b.onclick = () => kirim(c); $("#contoh").append(b); }
 $("#form").onsubmit = (e) => { e.preventDefault(); const t = $("#masukan").value.trim(); if (t) kirim(t); };

@@ -32,6 +32,7 @@ llm/
 ├── model-wiki/         LANGKAH 3 — indeks Wikipedia (`bun run index-wiki`)
 ├── gpt-models/         LANGKAH 3 — satu folder per model GPT (`bun run train-gpt` / `train-reader`)
 ├── progres/            progres + log setiap proses (`bun run status`, halaman /latih)
+├── .rahasia/           login Google Drive, alamat server training (tidak di-commit)
 ├── evaluation/         LANGKAH 4 — soal uji (questions, conversations, reasoning)
 ├── lessons/            01_bigram, 02_ngram, 03_bpe, 04_attention, 05_mini_gpt
 └── src/
@@ -46,6 +47,8 @@ llm/
     ├── rag/            RAG: konteks percakapan (dialog), ambil konteks (retrieve), baca + verifikasi (pipeline)
     ├── agent/          mode agent: semua mode + pencarian internet
     ├── reasoning/      agent penalaran (kalkulator, kalender, barisan, …) + pemeriksa relevansi
+    ├── gpu/            backend CUDA training GPT (gpt.cu: kernel matmul/attention/LayerNorm/Adam tulisan sendiri, cuda.ts: bun:ffi)
+    ├── cloud/          Google Drive (login OAuth, API, sinkron 3 arah) — dipakai `bun run drive` & `bun run server`
     ├── web/            index.html (chat), latih.html (data & training), jobs.ts (proses dari web)
     ├── model.ts        simpan / muat model chatbot
     └── commands/       satu file per perintah `bun run …`
@@ -66,6 +69,7 @@ bun install
 | Training dari folder `documents/` | `bun run train` |
 | Training dari folder lain | `bun run train -- --dokumen D:/aturan` |
 | Unduh peraturan JDIH BKN ke `documents/jdih/` | `bun run fetch-jdih` (crawler otomatis; ulangi kapan saja — yang sudah ada tidak diunduh lagi) |
+| Ambil artikel web ke `documents/web/` | `bun run fetch-web -- <url atau halaman daftar>` (ada `--rss`, `--daftar`; ekstrak judul + isi) |
 | Tanya satu pertanyaan | `bun run search -- "berapa hari cuti tahunan?"` |
 | Chatbot interaktif | `bun run chat` |
 | Chatbot mode agent (semua mode + internet) | `bun run chat -- --agent` (atau ketik `:agent` di dalam chat) |
@@ -112,6 +116,10 @@ bun run chat -- --rag                                                    # 5. ch
 | Latih dari dokumen aturan | `bun run siapkan-data -- --sumber aturan --nama aturan-v1`, lalu `bun run train-gpt -- --dataset aturan-v1 --name rules` |
 | Gabung beberapa sumber | `--sumber wikipedia,teks,aturan` (atau path file/folder) |
 | Pindahkan data dari struktur lama | `bun run migrasi-data` |
+| Simpan/sinkron data & model di Google Drive | web `/latih` → **☁ Hubungkan Google Drive** (login di popup, lalu jelajahi isi Drive) atau `bun run drive -- --login`, lalu `--unggah` / `--unduh` / `--sinkron` (PANDUAN bagian 10) |
+| Latih di pod GPU sewaan (packet.ai, lewat SSH) dengan **backend CUDA tulisan sendiri** | `bun run server -- --buat-kunci / --atur … / --siapkan / --latih -- …` (PANDUAN bagian 11) |
+| UI (chat + /latih) di pod lewat terowongan SSH | `bun run server -- --web` |
+| Kompilasi & uji backend GPU (di mesin ber-GPU NVIDIA) | `bun run build-gpu`, `bun run test-gpu`, lalu `train-gpt -- … --gpu` |
 
 `--resume`/`--from` menolak dataset yang tokenizernya berbeda dari model (sidik tokenizer di `data/siap/<dataset>/info.json`). Cara lama `--data <file>` (tokenisasi di memori) masih bisa dipakai.
 
@@ -365,7 +373,7 @@ Memori dipakai dengan dua cara:
 
 **Ekspor untuk perbaikan.** Tombol **Salin percakapan** menyalin seluruh percakapan, termasuk jalur, keyakinan, langkah proses, dan token GPT, sebagai teks yang bisa langsung ditempel saat meminta perbaikan. **Unduh JSON** menyimpan data mentah lengkap, termasuk matriks. Di terminal, perintah `:export` mencetak teks yang sama dan menyimpannya di folder `exports/`.
 
-Untuk uji coba, pilih **Mode** (otomatis, hanya aturan, hanya Wikipedia, atau hanya GPT) dan geser **Suhu GPT** untuk melihat pengaruhnya pada balasan. Di terminal, ringkasan yang sama tampil dengan `bun run chat -- --proses` atau perintah `:proses`.
+Untuk uji coba, pilih **Mode** (otomatis, hanya aturan, hanya Wikipedia, atau hanya GPT), ganti **GPT obrolan** / **GPT pembaca** ke model hasil training mana pun (tanpa restart server), dan geser **Suhu GPT** untuk melihat pengaruhnya pada balasan. Di terminal, ringkasan yang sama tampil dengan `bun run chat -- --proses` atau perintah `:proses`.
 
 **Halaman data & training (`/latih`).** Halaman ini menjalankan setiap langkah dengan tombol: ① ambil data (Wikipedia, JDIH, data obrolan/pembaca, upload file), ② siapkan dataset, ③ latih (model baru / lanjutkan / fine-tune, chatbot aturan, indeks Wikipedia, GPT pembaca), ④ evaluasi. Ada juga peta data (setiap folder, ukuran, dipakai langkah apa). Panel **Proses** menampilkan progress bar, grafik loss, log berjalan, dan tombol berhenti aman. Perintah yang boleh dijalankan dibatasi daftar putih di `src/web/jobs.ts`. Server hanya mendengar `127.0.0.1` kecuali diberi `--host`, dan menjalankan proses atau upload hanya diterima dari komputer yang menjalankan server. Proses yang dimulai dari web tetap berjalan walau server web dimatikan.
 

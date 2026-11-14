@@ -60,6 +60,26 @@
   .kosong { color: var(--muted); font-size: 13px; }
   .alur { font-family: var(--mono); font-size: 12px; color: var(--muted); }
   aside { position: sticky; top: 64px; }
+  /* kartu Proses: tinggi setinggi layar, isinya di-scroll sendiri (header & kolom kiri tidak ikut) */
+  #kartuProses { display: flex; flex-direction: column; max-height: calc(100vh - 84px); margin-bottom: 0; }
+  #daftarProses { overflow-y: auto; min-height: 0; flex: 1; padding-right: 4px; margin-right: -4px; overscroll-behavior: contain; }
+  @media (max-width: 1100px) { aside { position: static; } #kartuProses { max-height: none; } #daftarProses { max-height: 70vh; } }
+  pre.log { max-height: 320px; }
+  pre.log .no { color: #77756c; user-select: none; display: inline-block; min-width: 3.2em; text-align: right; margin-right: 8px; }
+  pre.log .baris { display: block; }
+  pre.log .baris.terbaru { color: #fff; }
+  .urutan { font-size: 11.5px; padding: 1px 8px; }
+  /* penjelajah Google Drive */
+  #jelajah { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
+  #jelajah .remah { font-size: 13px; margin-bottom: 6px; } #jelajah .remah a { color: var(--biru); text-decoration: none; } #jelajah .remah a:hover { text-decoration: underline; }
+  #jelajah table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
+  #jelajah td { padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  #jelajah td.ikon { width: 22px; } #jelajah td.num { text-align: right; white-space: nowrap; color: var(--muted); } #jelajah td.waktu { white-space: nowrap; color: var(--muted); }
+  #jelajah a.folder { color: var(--ink); font-weight: 600; cursor: pointer; text-decoration: none; } #jelajah a.folder:hover { color: var(--biru); }
+  .st { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: #eeece4; color: var(--muted); white-space: nowrap; }
+  .st-sama { background: #e1f0e6; color: #1f6f3f; } .st-beda { background: #fbe9d9; color: #a35a12; } .st-lokal { background: #fdf3c8; color: #7a6200; } .st-drive { background: #e3ebf7; color: #2f5fa7; }
+  a.tautan-drive { display: inline-block; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--biru); color: var(--biru); text-decoration: none; font-size: 13px; }
+  .ok-teks { color: #1f6f3f; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -67,7 +87,7 @@
   <h1>Data &amp; training</h1>
   <a href="/">← kembali ke chat</a>
   <nav class="langkah-nav">
-    <a href="#peta">Peta data</a><a href="#l1">① Ambil</a><a href="#l2">② Siapkan</a><a href="#l3">③ Latih</a><a href="#l4">④ Evaluasi</a>
+    <a href="#peta">Peta data</a><a href="#l1">① Ambil</a><a href="#l2">② Siapkan</a><a href="#l3">③ Latih</a><a href="#l4">④ Evaluasi</a><a href="#drive" id="navDrive">☁ Google Drive</a>
   </nav>
 </header>
 <main>
@@ -84,6 +104,22 @@
   <section class="kartu" id="l1">
     <h2><span class="nomor">1</span> Ambil data</h2>
     <div class="awam">Mengumpulkan data MENTAH. Semua bisa dijalankan ulang: yang sudah diunduh dilewati.</div>
+    <div class="alat" id="drive">
+      <h3>Google Drive (simpan & sinkron data)</h3><div class="ke">documents/ · data/mentah/ · data/siap/ · gpt-models/ ↔ Drive: folder "LLM"</div>
+      <div class="awam">Aplikasi hanya bisa melihat file yang ia unggah sendiri ke folder "LLM" (bukan seluruh Drive Anda). File yang hilang di satu sisi tidak pernah ikut dihapus kecuali "ikut hapus" dicentang.</div>
+      <div id="driveStatus" class="kecil">memuat…</div>
+      <div class="baris" id="driveTombol" style="margin:6px 0"></div>
+      <div id="jelajah" hidden></div>
+      <details id="driveLanjut" hidden style="margin-top:8px"><summary class="kecil">Opsi lanjutan: beberapa folder sekaligus, konflik, ikut hapus</summary>
+      <form class="baris" id="formDrive" data-perintah="drive">
+        <label>Aksi<select name="_aksi"><option value="status">lihat status (lokal vs Drive)</option><option value="sinkron">sinkron dua arah</option><option value="unggah">unggah lokal → Drive</option><option value="unduh">unduh Drive → lokal</option></select></label>
+        <label>Folder<select name="folder" id="folderDrive"><option value="">semua</option><option>documents</option><option>data/mentah</option><option>data/siap</option><option>gpt-models</option></select></label>
+        <label>Jika konflik<select name="menang"><option value="">simpan dua versi</option><option value="lokal">versi lokal menang</option><option value="drive">versi Drive menang</option></select></label>
+        <label class="cek"><input type="checkbox" name="kering" checked> lihat rencana dulu</label>
+        <label class="cek"><input type="checkbox" name="hapus"> ikut hapus</label>
+        <button>Jalankan</button></form>
+      </details>
+    </div>
     <div class="alat">
       <h3>Unduh Wikipedia Indonesia</h3><div class="ke">→ data/mentah/wikipedia/wiki-id.txt</div>
       <form class="baris" data-perintah="fetch-data"><label>Target total (MB)<input type="number" name="target-mb" value="60" min="1" max="2000"></label><button>Mulai unduh</button></form>
@@ -98,6 +134,15 @@
         <button>Mulai unduh</button></form>
     </div>
     <div class="alat">
+      <h3>Ambil artikel web (berita/konten situs apa pun)</h3><div class="ke">→ documents/web/</div>
+      <form class="baris" data-perintah="fetch-web">
+        <label>URL halaman / artikel<input name="url" placeholder="mis. https://www.bkn.go.id/category/publikasi/berita/"></label>
+        <label>RSS feed (opsional)<input name="rss" placeholder="mis. https://news.detik.com/rss"></label>
+        <label>Jumlah artikel baru (0 = semua)<input type="number" name="batas" value="20" min="0"></label>
+        <label class="cek"><input type="checkbox" name="kering"> daftar saja</label>
+        <button>Mulai ambil</button></form>
+    </div>
+    <div class="alat">
       <h3>Buat data obrolan (percakapan latih)</h3><div class="ke">→ data/mentah/obrolan/chat-id.jsonl</div>
       <form class="baris" data-perintah="make-chat-data"><label>Percakapan berkonteks<input type="number" name="konteks" value="6000" min="0"></label><button>Buat</button></form>
     </div>
@@ -109,6 +154,7 @@
       <h3>Upload file</h3>
       <form class="baris" id="formUnggah">
         <label>Tujuan<select name="tujuan"><option value="aturan">Dokumen aturan (PDF/DOCX/TXT/MD) → documents/upload/</option><option value="teks">Teks bahasa Indonesia (.txt) → data/mentah/teks/</option></select></label>
+        <label class="cek" id="unggahDriveLabel" hidden><input type="checkbox" name="_drive" id="unggahDrive"> juga unggah ke Google Drive</label>
       </form>
       <div id="unggah">Seret file ke sini, atau <label style="display:inline;color:var(--biru);cursor:pointer"><u>pilih file</u><input type="file" id="pilihBerkas" multiple hidden></label></div>
       <div class="pesan" id="pesanUnggah"></div>
@@ -158,6 +204,8 @@
           <div class="baris" style="display:flex;gap:12px;margin-top:6px">
             <label>lr<input type="number" name="lr" step="0.0001" placeholder="otomatis"></label>
             <label>batch<input type="number" name="batch" placeholder="16"></label>
+            <label class="cek" id="opsiGpu" hidden title="Backend CUDA tulisan sendiri (server ber-GPU NVIDIA). Saran batch 64."><input type="checkbox" name="gpu" id="cekGpu"> latih di GPU</label>
+            <label title="Jumlah worker paralel. Bawaan = jumlah CPU - 2. Kecilkan (mis. 4) jika RAM sedikit / muncul 'Failed to spawn worker thread'.">worker<input type="number" name="workers" min="1" max="64" placeholder="otomatis"></label>
             <label>dropout<input type="number" name="dropout" step="0.05" placeholder="0.1"></label>
             <label>patience<input type="number" name="patience" placeholder="5"></label>
           </div></details>
@@ -173,7 +221,18 @@
     </div>
     <div class="alat">
       <h3>GPT pembaca (RAG)</h3><div class="ke">data/mentah/pembaca/ → gpt-models/&lt;nama&gt;</div>
-      <form class="baris" data-perintah="train-reader"><label>Dari model<select name="from" class="pilihModel"></select></label><label>Nama<input class="nama" name="name" value="reader2"></label><label>Menit<input type="number" name="minutes" value="30"></label><button>Latih pembaca</button></form>
+      <form class="baris" data-perintah="train-reader"><label>Dari model<select name="from" class="pilihModel"></select></label><label>Nama<input class="nama" name="name" value="reader2"></label><label>Menit<input type="number" name="minutes" value="30"></label><label title="Jumlah worker paralel; setiap worker memuat salinan data. Kecilkan (mis. 4) jika RAM sedikit / muncul 'Failed to spawn worker thread'.">Worker<input type="number" name="workers" min="1" max="64" placeholder="otomatis"></label><button>Latih pembaca</button></form>
+    </div>
+    <div class="alat" id="kartuServer">
+      <h3>Latih di server (mis. packet.ai, lewat SSH)</h3>
+      <div class="awam">Training proyek ini memakai <b>CPU</b> (worker thread), GPU/RTX tidak dipakai, jadi pilih instance dengan <b>banyak core CPU</b>. Data dikirim lewat Google Drive (jika sudah login) atau scp, training berjalan di tmux (tetap jalan walau laptop mati), lalu model dikirim balik. Pengaturan & peluncuran dari terminal karena butuh kunci SSH Anda.</div>
+      <div id="infoServer" class="kecil"></div>
+      <pre class="alur" style="white-space:pre-wrap;margin:6px 0">bun run server -- --atur ubuntu@&lt;IP&gt; --port &lt;port&gt;      (alamat SSH dari dashboard packet.ai)
+bun run server -- --siapkan                               (pasang bun, kirim kode, cek CPU/RAM)
+bun run server -- --latih -- --dataset obrolan-v1 --from wiki2 --name chat3 --steps 1500
+bun run server -- --log chat3 --ikuti        bun run server -- --hentikan chat3
+bun run server -- --ambil chat3                            (model ke laptop, lalu pilih di halaman chat)</pre>
+      <form class="baris" data-perintah="server"><input type="hidden" name="status" value="true"><button class="sekunder">Lihat status server</button></form>
     </div>
   </section>
 
@@ -189,7 +248,7 @@
 </div>
 
 <aside>
-  <section class="kartu">
+  <section class="kartu" id="kartuProses">
     <h2>Proses</h2>
     <div class="awam">Semua proses dari halaman ini dan dari terminal. Progress bar diperbarui otomatis; klik "log" untuk melihat keluaran lengkap. "Hentikan" pada training = berhenti dengan aman (checkpoint disimpan dulu, bisa dilanjutkan).</div>
     <div id="daftarProses"><div class="kosong">memuat…</div></div>
@@ -280,7 +339,7 @@ async function jalankan(perintah, opsi, pesanEl) {
   } catch (e) { if (pesanEl) { pesanEl.className = "pesan galat"; pesanEl.textContent = e.message; } else alert(e.message); }
 }
 document.querySelectorAll("form[data-perintah]").forEach((f) => {
-  if (f.id === "formLatih") return;
+  if (f.id === "formLatih" || f.id === "formDrive") return;
   let pesan = f.parentElement.querySelector(".pesan"); if (!pesan) { pesan = el("div", "pesan"); f.after(pesan); }
   f.onsubmit = (e) => {
     e.preventDefault();
@@ -307,7 +366,14 @@ async function unggah(files) {
   const fd = new FormData(); fd.append("tujuan", $("#formUnggah").elements.tujuan.value);
   for (const f of files) fd.append("berkas", f);
   const p = $("#pesanUnggah"); p.className = "pesan"; p.textContent = `Mengunggah ${files.length} file…`;
-  try { const j = await api("/api/upload", { method: "POST", body: fd }); p.textContent = `Tersimpan: ${j.berkas.map((b) => b.lokasi).join(", ")}. ${j.saran}`; muatPeta(); }
+  try {
+    const j = await api("/api/upload", { method: "POST", body: fd }); p.textContent = `Tersimpan: ${j.berkas.map((b) => b.lokasi).join(", ")}. ${j.saran}`; muatPeta();
+    if ($("#unggahDrive").checked && !$("#unggahDriveLabel").hidden) {
+      const folder = $("#formUnggah").elements.tujuan.value === "aturan" ? "documents/upload" : "data/mentah/teks";
+      jalankan("drive", { unggah: true, folder }, null);
+      p.textContent += " Diunggah juga ke Google Drive (lihat panel Proses).";
+    }
+  }
   catch (e) { p.className = "pesan galat"; p.textContent = e.message; }
 }
 const zona = $("#unggah");
@@ -330,6 +396,9 @@ function grafik(riwayat) {
 async function muatProses() {
   const [jobs, progres] = await Promise.all([api("/api/job"), api("/api/progres")]);
   const wadah = $("#daftarProses");
+  // simpan posisi gulir sebelum kartu dibangun ulang
+  const gulirDaftar = wadah.scrollTop;
+  for (const [jid, pre] of preLog) if (pre.isConnected) gulirLog.set(jid, pre.scrollTop);
   // gabungkan: proses dari web (punya log) + proses dari terminal (hanya progres)
   const daftar = jobs.map((j) => ({ job: j, pr: progres.find((p) => p.pid === j.pid) }));
   for (const p of progres) if (!jobs.some((j) => j.pid === p.pid)) daftar.push({ job: null, pr: p });
@@ -360,6 +429,16 @@ async function muatProses() {
       const bLog = el("button", "sekunder", terbuka.has(id) ? "tutup log" : "log");
       bLog.onclick = () => { terbuka.has(id) ? terbuka.delete(id) : terbuka.add(id); muatProses(); };
       tombol.append(bLog);
+      if (terbuka.has(id)) {
+        const bUrut = el("button", "sekunder urutan", terbaruDiAtas ? "↑ terbaru di atas" : "↓ terbaru di bawah");
+        bUrut.title = "Ganti urutan baris log";
+        bUrut.onclick = () => {
+          terbaruDiAtas = !terbaruDiAtas; localStorage.setItem("logTerbaruDiAtas", terbaruDiAtas ? "1" : "0");
+          for (const [jid, pre] of preLog) { tampilLog(pre, logTeks.get(jid) ?? ""); pre.scrollTop = terbaruDiAtas ? 0 : pre.scrollHeight; }
+          muatProses();
+        };
+        tombol.append(bUrut);
+      }
     }
     if (status === "berjalan") {
       const bStop = el("button", "bahaya", "Hentikan");
@@ -374,33 +453,213 @@ async function muatProses() {
     }
     k.append(tombol);
     if (job && terbuka.has(id)) {
-      const pre = el("pre", "log"); k.append(pre);
-      const lama = k.dataset.log ?? ""; pre.textContent = lama; pre.scrollTop = pre.scrollHeight;
-      bacaLogBaru(job.id, k, pre);
-    }
+      // elemen log yang sama dipakai ulang, supaya posisi gulir tidak ter-reset setiap 2 detik
+      let pre = preLog.get(id);
+      if (!pre) { pre = el("pre", "log"); preLog.set(id, pre); tampilLog(pre, logTeks.get(id) ?? ""); }
+      k.append(pre);
+      if (gulirLog.has(id)) pre.scrollTop = gulirLog.get(id);
+      else pre.scrollTop = terbaruDiAtas ? 0 : pre.scrollHeight;
+      bacaLogBaru(job.id, pre);
+    } else if (job) { preLog.delete(id); gulirLog.delete(id); }
   }
   for (const k of [...wadah.children]) if (k.dataset.id && !ada.has(k.dataset.id)) k.remove();
+  wadah.scrollTop = gulirDaftar;
   // data di disk mungkin berubah karena proses selesai
   if (daftar.some(({ job }) => job && job.status !== "berjalan" && !selesaiDilihat.has(job.id))) {
     daftar.forEach(({ job }) => job && job.status !== "berjalan" && selesaiDilihat.add(job.id));
-    muatPeta(); muatDataset(); muatModel();
+    muatPeta(); muatDataset(); muatModel(); if (!$("#jelajah").hidden) muatJelajah();
   }
 }
 const selesaiDilihat = new Set();
-async function bacaLogBaru(id, kotak, pre) {
-  const dari = posisiLog.get(id) ?? 0;
-  const r = await api(`/api/job/${id}/log?dari=${dari}`).catch(() => null);
-  if (!r) return;
-  posisiLog.set(id, r.sampai);
-  if (r.teks) {
-    const bawah = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
-    kotak.dataset.log = ((kotak.dataset.log ?? "") + r.teks).slice(-150000);
-    pre.textContent = kotak.dataset.log;
-    if (bawah) pre.scrollTop = pre.scrollHeight;
+// ---------- log berjalan ----------
+// teks log disimpan berurutan (logTeks); tampilannya bisa terbaru-di-atas (bawaan) atau terbaru-di-bawah
+const logTeks = new Map(), preLog = new Map(), gulirLog = new Map(), sedangBaca = new Set();
+let terbaruDiAtas = localStorage.getItem("logTerbaruDiAtas") !== "0";
+const BARIS_PROGRES = /\[[█░]{5,}\]/;
+const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+/** Baris log: \r = baris ditimpa (ambil versi terakhir); baris progress bar berurutan diringkas jadi yang terakhir. */
+function barisLog(teks) {
+  const hasil = [];
+  for (const mentah of teks.split("\n")) {
+    const b = mentah.split("\r").filter((x) => x.trim()).at(-1) ?? "";
+    if (BARIS_PROGRES.test(b) && hasil.length && BARIS_PROGRES.test(hasil.at(-1))) hasil[hasil.length - 1] = b;
+    else hasil.push(b);
   }
+  while (hasil.length && !hasil.at(-1).trim()) hasil.pop();
+  return hasil;
+}
+function tampilLog(pre, teks) {
+  const baris = barisLog(teks).map((b, i) => [i + 1, b]);
+  if (terbaruDiAtas) baris.reverse();
+  const terbaru = terbaruDiAtas ? 0 : baris.length - 1;
+  pre.innerHTML = baris.map(([n, b], i) => `<span class="baris${i === terbaru ? " terbaru" : ""}"><span class="no">${n}</span>${esc(b) || " "}</span>`).join("");
+}
+async function bacaLogBaru(id, pre) {
+  if (sedangBaca.has(id)) return;
+  sedangBaca.add(id);
+  try {
+    const r = await api(`/api/job/${id}/log?dari=${posisiLog.get(id) ?? 0}`).catch(() => null);
+    if (!r) return;
+    posisiLog.set(id, r.sampai);
+    if (!r.teks) return;
+    logTeks.set(id, ((logTeks.get(id) ?? "") + r.teks).slice(-150000));
+    // ikuti log baru hanya jika pengguna sedang di ujung "terbaru"; kalau sedang membaca baris lama, posisinya dijaga
+    const diUjung = terbaruDiAtas ? pre.scrollTop < 20 : pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
+    const dariBawah = pre.scrollHeight - pre.scrollTop;
+    tampilLog(pre, logTeks.get(id));
+    if (diUjung) pre.scrollTop = terbaruDiAtas ? 0 : pre.scrollHeight;
+    else if (terbaruDiAtas) pre.scrollTop = pre.scrollHeight - dariBawah; // baris baru masuk di atas: geser agar teks yang dibaca tetap di tempat
+    gulirLog.set(id, pre.scrollTop);
+  } finally { sedangBaca.delete(id); }
 }
 
-async function semua() { await Promise.all([muatPeta(), muatDataset(), muatModel()]); muatProses(); }
+// ---------------- Google Drive ----------------
+// status login terakhir & penjelajah
+let driveLogin = false, jelajahPath = "", menungguLogin = false, popupDrive = null, timerLogin = null;
+
+/** Buka jendela POPUP login Google (dipanggil langsung dari klik, supaya tidak diblokir browser). */
+function loginDrive() {
+  const w = window.open("/drive/login", "loginDrive", "width=560,height=740");
+  if (!w) {
+    if (confirm("Popup diblokir browser. Izinkan popup untuk situs ini, atau buka login di halaman ini saja?")) location.href = "/drive/login";
+    return;
+  }
+  popupDrive = w; menungguLogin = true; w.focus();
+  const st = $("#driveStatus"); st.innerHTML = "";
+  st.append(el("span", "", "Menunggu login di jendela popup… "));
+  const batal = el("button", "sekunder", "Batal"); batal.onclick = () => { try { popupDrive?.close(); } catch {} hentikanTunggu(); muatDrive(); };
+  const fokus = el("button", "sekunder", "Tampilkan popup"); fokus.onclick = () => { try { popupDrive?.focus(); } catch {} };
+  st.append(fokus, " ", batal);
+  $("#driveTombol").innerHTML = "";
+  clearInterval(timerLogin);
+  const mulai = Date.now();
+  // cadangan selain postMessage: halaman login Google bisa memutus hubungan popup <-> halaman ini
+  timerLogin = setInterval(async () => {
+    if (Date.now() - mulai > 10 * 60_000) { hentikanTunggu(); muatDrive(); return; }
+    const s = await api("/api/drive/status").catch(() => null);
+    if (s?.login) loginSelesai("berhasil");
+  }, 1500);
+}
+function hentikanTunggu() { clearInterval(timerLogin); timerLogin = null; menungguLogin = false; popupDrive = null; }
+function loginSelesai(hasil) {
+  if (!menungguLogin) return;
+  try { popupDrive?.close(); } catch {}
+  hentikanTunggu();
+  jelajahPath = "";
+  muatDrive().then(() => {
+    pesanDrive(hasil === "berhasil" ? '✓ Terhubung ke Google Drive. Ini isi folder "LLM" — klik folder untuk masuk.' : `Login gagal: ${hasil}`, hasil !== "berhasil");
+    $("#drive").scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+window.addEventListener("message", (e) => {
+  if (e.data?.jenis !== "drive-login") return;
+  if (popupDrive && e.source && e.source !== popupDrive) return;
+  loginSelesai(String(e.data.hasil ?? ""));
+});
+function pesanDrive(teks, galat) {
+  const p = el("div", galat ? "pesan galat" : "pesan", teks);
+  $("#driveStatus").prepend(p); setTimeout(() => p.remove(), 10000);
+}
+
+async function muatDrive() {
+  const s = await api("/api/drive/status").catch(() => null);
+  const st = $("#driveStatus"), tombol = $("#driveTombol"), lanjut = $("#driveLanjut"), jel = $("#jelajah");
+  if (!s) { st.textContent = "status Drive tidak terbaca"; return; }
+  if (menungguLogin) return; // sedang menunggu popup
+  tombol.innerHTML = ""; st.innerHTML = "";
+  driveLogin = s.login;
+  $("#navDrive").textContent = s.login ? "☁ Drive ✓" : "☁ Google Drive";
+  $("#unggahDriveLabel").hidden = !s.login;
+  if (!s.login) {
+    lanjut.hidden = true; jel.hidden = true;
+    st.append(el("span", "", s.klien ? "Belum terhubung." : "Belum terhubung. Jendela popup akan memandu persiapan sekali saja (±5 menit), lalu login."));
+    const b = el("button", "", "☁ Hubungkan Google Drive"); b.onclick = loginDrive; tombol.append(b);
+    tombol.append(el("span", "kecil", ' Login terbuka di jendela popup; halaman ini tetap. (Muncul "aplikasi belum diverifikasi"? Normal untuk aplikasi pribadi: pilih Lanjutkan.)'));
+    return;
+  }
+  lanjut.hidden = false;
+  st.append(el("span", "ok-teks", `✓ Terhubung ke Google Drive${s.sejak ? ` (sejak ${waktu(s.sejak)})` : ""}`));
+  const keluar = el("button", "bahaya", "Logout");
+  keluar.onclick = async () => { if (!confirm("Cabut akses aplikasi ke Google Drive? File di Drive tidak dihapus.")) return; await api("/api/drive/logout", { method: "POST" }); jelajahPath = ""; muatDrive(); };
+  tombol.append(keluar);
+  // pilihan folder di opsi lanjutan
+  const sel = $("#folderDrive"), kini = sel.value;
+  const tambahan = [...dataset.map((d) => `data/siap/${d.nama}`), ...model.map((m) => `gpt-models/${m.nama}`), "documents/jdih", "documents/upload", "documents/web", "data/mentah/teks"];
+  for (const o of [...sel.options]) if (o.dataset.tambahan) o.remove();
+  for (const t of tambahan) { const o = el("option", "", t); o.dataset.tambahan = "1"; sel.append(o); }
+  sel.value = kini;
+  await muatJelajah(jelajahPath);
+}
+
+const LABEL_ST = { "sama": ["sama", "st-sama"], "beda": ["beda", "st-beda"], "hanya di Drive": ["hanya di Drive", "st-drive"], "hanya di lokal": ["hanya di lokal", "st-lokal"], "belum diunggah": ["belum diunggah", "st-lokal"], "dokumen Google": ["dokumen Google", ""] };
+/** Penjelajah: isi folder "LLM dari Nol/<path>" di Drive dibanding folder lokal yang sama. */
+async function muatJelajah(path = jelajahPath) {
+  jelajahPath = path;
+  const box = $("#jelajah"); box.hidden = false;
+  const remah = el("div", "remah");
+  const ke = (teks, p) => { const a = el("a", "", teks); a.href = "#"; a.onclick = (e) => { e.preventDefault(); muatJelajah(p); }; return a; };
+  remah.append(ke('☁ LLM', ""));
+  const bagian = path ? path.split("/") : [];
+  bagian.forEach((b, i) => remah.append(" / ", ke(b, bagian.slice(0, i + 1).join("/"))));
+  const memuat = el("div", "kecil", "memuat isi Drive…");
+  box.innerHTML = ""; box.append(remah, memuat);
+  let d;
+  try { d = await api(`/api/drive/isi?path=${encodeURIComponent(path)}`); }
+  catch (e) { memuat.className = "pesan galat"; memuat.textContent = e.message; return; }
+  memuat.remove();
+  // aksi untuk folder ini
+  const aksi = el("div", "baris"), pesanJ = el("div", "pesan");
+  if (d.tautan) { const a = el("a", "tautan-drive", "Buka di Google Drive ↗"); a.href = d.tautan; a.target = "_blank"; a.rel = "noopener"; aksi.append(a); }
+  const folderOpsi = d.folderAksi ? { folder: d.folderAksi } : {};
+  const tombol = (teks, o, judul) => { const b = el("button", "sekunder", teks); b.title = judul; b.onclick = () => jalankan("drive", { ...o, ...folderOpsi }, pesanJ); aksi.append(b); };
+  const nama = path || "semua folder";
+  tombol("↑ Unggah ke Drive", { unggah: true }, `File baru/berubah di lokal (${nama}) diunggah ke Drive`);
+  tombol("↓ Unduh ke lokal", { unduh: true }, `File di Drive (${nama}) diunduh ke folder lokal yang sama`);
+  tombol("⇅ Sinkron (lihat rencana)", { sinkron: true, kering: true }, "Tampilkan apa yang akan diunggah/diunduh, tanpa mengubah apa pun");
+  box.append(aksi, pesanJ);
+  if (!d.tautan && path) box.append(el("div", "kecil", "Folder ini belum ada di Drive. Klik ↑ Unggah ke Drive."));
+  if (!d.item.length) { box.append(el("div", "kosong", "Kosong, di Drive maupun di lokal.")); return; }
+  const t = el("table");
+  for (const it of d.item) {
+    const tr = el("tr");
+    tr.append(el("td", "ikon", it.folder ? "📁" : "📄"));
+    const tdNama = el("td");
+    if (it.folder) { const a = el("a", "folder", it.nama); a.onclick = () => muatJelajah(it.path); tdNama.append(a); }
+    else tdNama.textContent = it.nama;
+    tr.append(tdNama, el("td", "num", it.ukuran !== null ? ukuran(it.ukuran) : ""), el("td", "waktu", it.diubah ? waktu(it.diubah) : ""));
+    const tdSt = el("td");
+    if (it.status !== "folder") { const [lbl, cls] = LABEL_ST[it.status] ?? [it.status, ""]; tdSt.append(el("span", `st ${cls}`, lbl)); }
+    else if (it.tautan === null) tdSt.append(el("span", "st st-lokal", "belum diunggah"));
+    const tdLink = el("td");
+    if (it.tautan) { const a = el("a", "", "↗"); a.href = it.tautan; a.target = "_blank"; a.rel = "noopener"; a.title = "Buka di Google Drive"; tdLink.append(a); }
+    tr.append(tdSt, tdLink); t.append(tr);
+  }
+  box.append(t);
+  const n = d.item.filter((x) => !x.folder), beda = n.filter((x) => x.status !== "sama" && x.status !== "dokumen Google").length;
+  box.append(el("div", "kecil", `${n.length} file${beda ? ` · ${beda} belum sama (unggah/unduh/sinkron untuk menyamakan)` : n.length ? " · semua sama" : ""}`));
+}
+// tautan header: belum login -> langsung popup login
+$("#navDrive").onclick = (e) => { if (!driveLogin) { e.preventDefault(); $("#drive").scrollIntoView({ behavior: "smooth" }); loginDrive(); } };
+$("#formDrive").onsubmit = (e) => {
+  e.preventDefault();
+  const f = e.target, o = opsiDari(f), aksi = f.elements._aksi.value;
+  o[aksi] = true;
+  if (aksi === "status") { delete o.kering; delete o.hapus; delete o.menang; }
+  if (o.hapus && !o.kering && !confirm('"Ikut hapus" akan menghapus file yang sudah dihapus di sisi lain (lokal dipindah ke .rahasia/sampah, Drive ke tempat sampah Drive). Lanjut?')) return;
+  let pesan = f.parentElement.querySelector(".pesan"); if (!pesan) { pesan = el("div", "pesan"); f.after(pesan); }
+  jalankan("drive", o, pesan);
+};
+async function muatGpu() {
+  const g = await api("/api/gpu").catch(() => null);
+  $("#opsiGpu").hidden = !g?.ada;
+  if (g?.ada && !$("#cekGpu").dataset.diatur) { $("#cekGpu").checked = true; $("#cekGpu").dataset.diatur = "1"; }
+}
+async function muatServer() {
+  const s = await api("/api/server").catch(() => null);
+  $("#infoServer").textContent = s?.ada ? `Server diatur: ${s.tujuan ?? "(tersembunyi)"}${s.port ? ` port ${s.port}` : ""}` : "Server belum diatur (perintah pertama di bawah).";
+}
+
+async function semua() { await Promise.all([muatPeta(), muatDataset(), muatModel()]); muatDrive(); muatServer(); muatGpu(); muatProses(); }
 semua();
 setInterval(muatProses, 2000);
 </script>

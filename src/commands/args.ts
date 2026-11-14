@@ -1,7 +1,7 @@
 /**
  * Parser argumen sederhana:  --kunci nilai,  --flag (tanpa nilai = "true"),  dan sisa teks bebas.
  */
-const FLAG = new Set(["pre-ln", "resume", "tanpa-embedding", "keep-case", "stop-newline", "proses", "agent", "tanpa-internet", "dengan-aturan", "rag", "internet", "ikuti", "bersihkan", "crawler", "kering", "ganti", "paksa", "huruf-asli"]);
+const FLAG = new Set(["pre-ln", "resume", "tanpa-embedding", "keep-case", "stop-newline", "proses", "agent", "tanpa-internet", "dengan-aturan", "rag", "internet", "ikuti", "bersihkan", "crawler", "kering", "ganti", "paksa", "huruf-asli", "login", "logout", "unggah", "unduh", "sinkron", "hapus", "siapkan", "kirim-kode", "tempel", "tanpa-drive", "buat-kunci", "daftarkan", "pasang-kunci", "uji", "gpu", "cpu", "web"]);
 
 export function argumen(argv = process.argv.slice(2)) {
   const opsi: Record<string, string> = {};

@@ -35,7 +35,7 @@ if (opsi.bersihkan === "true") {
 const lalu = (iso: string) => formatDurasi((Date.now() - Date.parse(iso)) / 1000) + " lalu";
 
 function tampil(daftar: Progres[]): string {
-  if (!daftar.length) return "Belum ada proses tercatat. Proses yang mencatat progres: train-gpt, train-reader, fetch-data, fetch-jdih.";
+  if (!daftar.length) return "Belum ada proses tercatat. Proses yang mencatat progres: train-gpt, train-reader, fetch-data, fetch-jdih, fetch-web, siapkan-data.";
   const baris: string[] = [];
   for (const p of daftar) {
     const lebar = 24, isi = p.persen !== null ? Math.round((lebar * p.persen) / 100) : 0;
