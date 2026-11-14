@@ -6,8 +6,10 @@
  *   2. Attention (1 token): skor q·k, dibagi √d, softmax -> seberapa besar perhatian ke tiap token
  *   3. Peta attention:      matriks bobot perhatian semua token, per lapisan & head
  *   4. Logits -> peluang:   z, z/suhu, e^(z/suhu), dibagi jumlah -> peluang token berikutnya
+ *   5. Perhatian ke konteks: saat menulis balasan, berapa persen attention jatuh ke kartu konteks,
+ *                            riwayat percakapan, pesan sekarang, dan balasannya sendiri
  */
-import { END, type Tokenizer } from "./bpe.js";
+import { END, KONTEKS, USER, type Tokenizer } from "./bpe.js";
 import type { GPT } from "./model.js";
 
 const r = (x: number, d = 3) => Number(x.toFixed(d));
@@ -18,6 +20,12 @@ export interface SimulasiGPT {
   attentionSatu: { lapisan: number; head: number; dari: string; q: number[]; baris: { token: string; k: number[]; qk: number; skala: number; p: number }[] };
   peta: number[][][][];   // [lapisan][head][i][j]
   peluang: { suhu: number; baris: { token: string; z: number; zSuhu: number; exp: number; p: number }[]; jumlahExp: number; sisaP: number };
+  perhatian: PerhatianKonteks;
+}
+export interface PerhatianKonteks {
+  segmen: { nama: string; token: number; persen: number }[];            // rata-rata semua lapisan & head
+  perLapisan: number[][];                                                // [lapisan][segmen] persen
+  teratas: { token: string; segmen: string; persen: number }[];          // token kartu/riwayat paling diperhatikan
 }
 
 export function simulasiGPT(model: GPT, tok: Tokenizer, prompt: number[], balasan: number[], suhu: number): SimulasiGPT {
@@ -65,7 +73,41 @@ export function simulasiGPT(model: GPT, tok: Tokenizer, prompt: number[], balasa
 
   const peta = d.attention.map((lap) => lap.map((m) => m.slice(awal).map((row) => row.slice(awal).map((x) => r(x, 3)))));
   return {
-    D: d.D, H: d.H, dh: d.dh, jendela, vektor, peta, peluang,
+    D: d.D, H: d.H, dh: d.dh, jendela, vektor, peta, peluang, perhatian: perhatianKonteks(tok, urutan, Math.min(promptJendela.length, urutan.length), d.attention),
     attentionSatu: { lapisan: 1, head: 1, dari: label[i], q: q.slice(0, 8).map((x) => r(x)), baris: barisAtt },
   };
+}
+
+/**
+ * Seberapa besar model MELIHAT KE BELAKANG saat menulis balasan. Baris attention yang dipakai adalah
+ * posisi-posisi yang menghasilkan token balasan (akhir prompt .. sebelum token terakhir). Setiap baris
+ * dijumlah per segmen: kartu konteks, riwayat (giliran sebelumnya), pesan sekarang, balasan sendiri.
+ */
+function perhatianKonteks(tok: Tokenizer, urutan: number[], panjangPrompt: number, att: number[][][][]): PerhatianKonteks {
+  const idKonteks = tok.idToken(KONTEKS), idUser = tok.idToken(USER), idEnd = tok.idToken(END);
+  // batas segmen
+  let akhirKartu = 0;
+  if (idKonteks !== undefined && urutan[0] === idKonteks) akhirKartu = urutan.indexOf(idEnd!) + 1;
+  const awalPesan = urutan.slice(0, panjangPrompt).lastIndexOf(idUser!);
+  const segmenDari = (j: number) => j < akhirKartu ? 0 : j < awalPesan ? 1 : j < panjangPrompt ? 2 : 3;
+  const nama = ["kartu konteks", "riwayat percakapan", "pesan sekarang", "balasan sendiri"];
+  const baris: number[] = [];
+  for (let i = panjangPrompt - 1; i < urutan.length - 1; i++) baris.push(i);
+  if (!baris.length) baris.push(panjangPrompt - 1);
+  const L = att.length, H = att[0].length;
+  const perLapisan = att.map((lap) => {
+    const jml = [0, 0, 0, 0];
+    for (const m of lap) for (const i of baris) for (let j = 0; j <= i; j++) jml[segmenDari(j)] += m[i][j];
+    return jml.map((x) => r((100 * x) / (H * baris.length), 1));
+  });
+  const segmen = nama.map((n, k) => ({
+    nama: n, token: urutan.filter((_, j) => segmenDari(j) === k).length,
+    persen: r(perLapisan.reduce((a, x) => a + x[k], 0) / L, 1),
+  }));
+  // token kartu/riwayat yang paling banyak diperhatikan (rata-rata semua lapisan, head, dan baris balasan)
+  const perToken = new Map<number, number>();
+  for (const lap of att) for (const m of lap) for (const i of baris) for (let j = 0; j < Math.min(i + 1, awalPesan); j++) perToken.set(j, (perToken.get(j) ?? 0) + m[i][j]);
+  const teratas = [...perToken].sort((a, b) => b[1] - a[1]).filter(([j]) => !/^<\|/.test(tok.vocab[urutan[j]])).slice(0, 8)
+    .map(([j, v]) => ({ token: tok.vocab[urutan[j]], segmen: nama[segmenDari(j)], persen: r((100 * v) / (L * H * baris.length), 1) }));
+  return { segmen, perLapisan, teratas };
 }

@@ -6,3 +6,8 @@ data/wiki-id*.txt
 data/memory.json
 data/reader-id.jsonl
 exports/
+progres/
+documents/jdih/
+data/mentah/
+data/siap/
+documents/upload/

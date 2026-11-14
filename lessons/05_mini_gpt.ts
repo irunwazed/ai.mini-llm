@@ -60,4 +60,4 @@ for (const awal of [" ibu", " anak anak", " setiap hari"]) {
   console.log(`  "${awal.trim()}${hasilkanTeks(model, tok, awal, 30, { suhu: 0.8, topP: 0.9, seed: 3 })}"`);
 }
 console.log("\nKorpus ini kecil (±1.500 token untuk ±85 ribu parameter), jadi model banyak menghafal.");
-console.log("Solusinya data jauh lebih banyak:  bun run fetch-data  lalu  bun run train-gpt -- --data data/wiki-id.txt --name wiki --keep-case");
+console.log("Solusinya data jauh lebih banyak:  bun run fetch-data  lalu  bun run siapkan-data -- --sumber wikipedia --nama wiki-v1 --huruf-asli, lalu bun run train-gpt -- --dataset wiki-v1 --name wiki");

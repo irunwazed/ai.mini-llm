@@ -5,6 +5,8 @@
  *   bun run make-reader-data                                  (sekali, membuat data/reader-id.jsonl)
  *   bun run train-reader -- --from wiki --name reader         (±30 menit)
  *
+ * Ctrl+C = berhenti dengan aman (checkpoint terbaik disimpan). Pantau: bun run status -- --ikuti
+ *
  * Opsi (bawaan): --from (wiki) --name (reader) --data (data/reader-id.jsonl) --minutes (30) --steps
  *   --batch (16) --lr (0.001) --warmup (100) --eval-every (100) --patience (6) --dropout (0.1)
  *   --context (256) --workers (CPU − 2) --seed (1)
@@ -26,6 +28,8 @@ import { Adam, jadwalLR } from "../gpt/optimizer.js";
 import { Rng } from "../gpt/random.js";
 import { bagiData, type ContohPembaca } from "../gpt/reader-data.js";
 import { baca, encodeContoh, f1Kata, type UrutanPembaca } from "../gpt/reader.js";
+import { Pelacak } from "../gpt/progress.js";
+import { LOKASI, lokasiBaca } from "../paths.js";
 import { argumen } from "./args.js";
 
 const { opsi } = argumen();
@@ -58,7 +62,7 @@ const model = new GPT(config, P);
 }
 
 // 2. Data -------------------------------------------------------------------------------
-const data: ContohPembaca[] = readFileSync(opsi.data ?? "data/reader-id.jsonl", "utf8").split(/\r?\n/).filter((l) => l.trim()).map((l) => JSON.parse(l));
+const data: ContohPembaca[] = readFileSync(opsi.data ?? lokasiBaca(LOKASI.pembaca), "utf8").split(/\r?\n/).filter((l) => l.trim()).map((l) => JSON.parse(l));
 const { train: dTrain, val: dVal } = bagiData(data);
 const T = config.context;
 const enc = (d: ContohPembaca) => encodeContoh(tok, d.pertanyaan, d.konteks, d.awal, d.jawaban, T, hurufKecil);
@@ -142,25 +146,31 @@ const mulaiLatih = performance.now();
 let ringkas = { em: 0, f1: 0, kosong: 0, ambang: 0.5 };
 const meta = (langkah: number): MetaGPT => ({
   mode: "pembaca", dasar: dari, config, bpe: asal.meta.bpe, hurufKecil, langkah, lossValTerbaik: terbaik, riwayat,
-  data: opsi.data ?? "data/reader-id.jsonl", jumlahToken: train.reduce((s, u) => s + u.x.length, 0), waktu: new Date().toISOString(),
+  data: opsi.data ?? lokasiBaca(LOKASI.pembaca), jumlahToken: train.reduce((s, u) => s + u.x.length, 0), waktu: new Date().toISOString(),
   pembaca: { ambang: ringkas.ambang, em: ringkas.em, f1: ringkas.f1, akurasiKosong: ringkas.kosong, contohVal: valUji.length },
 });
 
 const v0 = ukurVal();
 console.log(`[4/4] Training ${langkahTotal ? `${langkahTotal} langkah` : `±${Math.round(anggaran / 60)} menit`}; sebelum latih: loss val ${v0.loss.toFixed(3)}, EM ${(100 * v0.em).toFixed(1)}%, F1 ${(100 * v0.f1).toFixed(1)}%\n`);
 console.log("langkah | loss train | loss val |   EM  |   F1  | tolak benar");
+console.log("        (Ctrl+C = berhenti dengan aman & simpan · pantau dari terminal lain: bun run status -- --ikuti)");
+const pelacak = new Pelacak("train-reader", nama, { total: langkahTotal });
+let dihentikan = 0;
 for (let langkah = 1; langkahTotal === null || langkah <= langkahTotal; langkah++) {
   const kerja = Array.from({ length: batch }, () => rng.int(train.length));
   jumlahLoss += (await hitungBatch(kerja, 1 / batch)) / batch / 2;
   nLoss++;
   adam.langkah(G, langkah, jadwalLR(langkah, langkahTotal ?? 1e9, lrMaks, warmup));
+  pelacak.langkah(langkah, { lossTrain: jumlahLoss / nLoss, kecepatan: batch / Math.max(1e-3, (performance.now() - mulaiLatih) / 1000 / langkah) });
   if (langkahTotal === null && langkah === 20) {
     const perLangkah = (performance.now() - mulaiLatih) / 1000 / 20;
     langkahTotal = Math.max(setiap, Math.floor(anggaran / (perLangkah * 1.12))); // ±10% waktu untuk evaluasi
     console.log(`        (±${perLangkah.toFixed(2)} detik/langkah -> total ${langkahTotal} langkah)`);
+    pelacak.setTotal(langkahTotal);
   }
-  if (langkah % setiap === 0 || langkah === langkahTotal) {
+  if (langkah % setiap === 0 || langkah === langkahTotal || pelacak.berhenti) {
     const v = ukurVal();
+    pelacak.evaluasi(langkah, jumlahLoss / nLoss, v.loss, Math.min(terbaik, v.loss));
     riwayat.push({ langkah, lossTrain: jumlahLoss / nLoss, lossVal: v.loss, detik: detik() });
     const lebihBaik = v.loss < terbaik - 1e-3;
     console.log(`${String(langkah).padStart(7)} | ${(jumlahLoss / nLoss).toFixed(4).padStart(10)} | ${v.loss.toFixed(4).padStart(8)} | ${(100 * v.em).toFixed(1).padStart(5)} | ${(100 * v.f1).toFixed(1).padStart(5)} | ${(100 * v.kosong).toFixed(1).padStart(6)}%${lebihBaik ? " *" : ""}`);
@@ -170,8 +180,11 @@ for (let langkah = 1; langkahTotal === null || langkah <= langkahTotal; langkah+
       simpanGPT(nama, meta(langkah), P);
     } else if (++tanpaKemajuan >= patience) { console.log(`\nEarly stopping (loss val tidak membaik ${patience} evaluasi).`); break; }
     jumlahLoss = 0; nLoss = 0;
+    if (pelacak.berhenti) { dihentikan = langkah; break; }
   }
 }
 for (const { w } of pekerja) w.terminate();
+pelacak.tutup(dihentikan ? "berhenti" : "selesai", dihentikan ? `dihentikan di langkah ${dihentikan}` : `F1 ${(100 * ringkas.f1).toFixed(1)}%`);
+if (dihentikan) console.log(`\nDihentikan dengan aman di langkah ${dihentikan}; checkpoint terbaik sudah tersimpan. Lanjutkan dengan: bun run train-reader -- --from ${nama} --name ${nama}-lanjut`);
 console.log(`\nSelesai dalam ${Math.round(detik() / 60)} menit. Terbaik: loss val ${terbaik.toFixed(3)}, EM ${(100 * ringkas.em).toFixed(1)}%, F1 ${(100 * ringkas.f1).toFixed(1)}%, ambang keyakinan ${ringkas.ambang}.`);
 console.log(`Uji:  bun run eval-reader -- --name ${nama}`);

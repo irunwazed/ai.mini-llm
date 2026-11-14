@@ -5,15 +5,17 @@
  *   <|user|> halo<|end|><|bot|> Halo! Ada yang bisa saya bantu?<|end|><|user|> apa kabar?<|end|><|bot|>
  * Model lalu melanjutkan teks setelah <|bot|> sampai menghasilkan <|end|>.
  * Jika riwayat terlalu panjang untuk konteks, giliran paling awal dibuang.
+ * Kartu konteks (opsi.kartu: fakta pengguna, lihat context-card.ts) selalu ditaruh paling depan dan tidak
+ * pernah dibuang:  <|konteks|> nama: Sari; tinggal: Medan<|end|><|user|> …
  */
-import { BOT, END, UNK, USER, type Tokenizer } from "./bpe.js";
+import { BOT, END, KONTEKS, UNK, USER, type Tokenizer } from "./bpe.js";
 import type { GPT } from "./model.js";
 import { simulasiGPT, type SimulasiGPT } from "./inspect.js";
 import { hasilkanDariId } from "./text-generator.js";
 
 export interface Giliran { user: string; bot: string }
 
-export interface OpsiChat { suhu?: number; topP?: number; topK?: number; penaltiUlang?: number; maksToken?: number; seed?: number; simulasi?: boolean }
+export interface OpsiChat { suhu?: number; topP?: number; topK?: number; penaltiUlang?: number; maksToken?: number; seed?: number; simulasi?: boolean; kartu?: string | null }
 
 export function balas(model: GPT, tok: Tokenizer, riwayat: Giliran[], pesan: string, opsi: OpsiChat = {}, hurufKecil = false): string {
   return balasDetail(model, tok, riwayat, pesan, opsi, hurufKecil).teks;
@@ -22,6 +24,8 @@ export function balas(model: GPT, tok: Tokenizer, riwayat: Giliran[], pesan: str
 /** Jejak pembuatan balasan, untuk belajar: token prompt dan pilihan token di setiap langkah. */
 export interface JejakGPT {
   prompt: string[];                                    // potongan token BPE yang dibaca model
+  kartu: string | null;                                // kartu konteks yang dipakai (null jika tidak ada/didukung)
+  giliranDipakai: number;                              // jumlah giliran riwayat yang muat di konteks
   langkah: { token: string; p: number; kandidat: { token: string; p: number }[] }[];
   suhu: number; topK: number; topP: number; penaltiUlang: number;
   simulasi?: SimulasiGPT;                              // angka-angka di dalam model (opsi.simulasi)
@@ -36,15 +40,20 @@ export function balasDetail(
   const giliran = (g: Giliran) => [idUser, ...tok.encode(norm(g.user)), idEnd, idBot, ...tok.encode(norm(g.bot)), idEnd];
   const akhir = [idUser, ...tok.encode(norm(pesan)), idEnd, idBot];
 
-  // Pangkas riwayat dari depan agar prompt + jawaban muat dalam konteks
+  // Kartu konteks hanya untuk model yang dilatih dengan token <|konteks|>
+  const idKonteks = tok.idToken(KONTEKS);
+  const kartu = opsi.kartu && idKonteks !== undefined ? opsi.kartu : null;
+  const awalan = kartu ? [idKonteks!, ...tok.encode(norm(kartu)), idEnd] : [];
+  // Pangkas riwayat dari depan agar kartu + riwayat + jawaban muat dalam konteks (kartu tidak pernah dipangkas)
   let r = riwayat.slice();
-  const panjang = () => r.reduce((s, g) => s + giliran(g).length, 0) + akhir.length;
+  const panjang = () => awalan.length + r.reduce((s, g) => s + giliran(g).length, 0) + akhir.length;
   while (r.length && panjang() + maks > model.c.context) r = r.slice(1);
-  const prompt = [...r.flatMap(giliran), ...akhir].slice(-(model.c.context - 1));
+  const prompt = [...awalan, ...r.flatMap(giliran), ...akhir].slice(-(model.c.context - 1));
 
   const larang = [idUser, idBot, tok.idToken(UNK)].filter((x): x is number => x !== undefined);
   const jejak: JejakGPT = {
     prompt: prompt.map((id) => tok.vocab[id]),
+    kartu, giliranDipakai: r.length,
     langkah: [],
     suhu: opsi.suhu ?? 0.7, topP: opsi.topP ?? 0.9, topK: opsi.topK ?? 40, penaltiUlang: opsi.penaltiUlang ?? 1.15,
   };

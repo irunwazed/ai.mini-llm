@@ -25,6 +25,8 @@ export interface MetaGPT {
   data: string;
   jumlahToken: number;
   waktu: string;
+  /** Riwayat data latih: setiap putaran training (termasuk --resume dengan data baru) satu baris. */
+  dataset?: { nama: string; mulai: number; selesai: number; waktu: string }[];
   /** Khusus pembaca: ambang keyakinan hasil kalibrasi + skor val. */
   pembaca?: { ambang: number; em: number; f1: number; akurasiKosong: number; contohVal: number };
 }

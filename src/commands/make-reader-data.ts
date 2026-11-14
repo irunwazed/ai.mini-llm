@@ -8,17 +8,19 @@
  * Bawaan hanya Wikipedia (data/wiki-id.txt), supaya skor penjawab aturan di `bun run eval`
  * tetap jujur (dokumen aturan tidak "dilihat" pembaca saat latihan).
  */
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { LOKASI, lokasiBaca } from "../paths.js";
 import { muatModel } from "../model.js";
 import { bagiData, buatDataPembaca, type Artikel } from "../gpt/reader-data.js";
 import { argumen } from "./args.js";
 
 const { opsi, folderModel } = argumen();
 const artikel: Artikel[] = [];
-const fileWiki = opsi.wiki ?? "data/wiki-id.txt";
+const fileWiki = opsi.wiki ?? lokasiBaca(LOKASI.wikiTeks);
 if (existsSync(fileWiki)) {
-  const judul = existsSync("data/wiki-id.sources.txt")
-    ? readFileSync("data/wiki-id.sources.txt", "utf8").split(/\r?\n/).filter((l) => l.trim() && !l.startsWith("#")) : [];
+  const judul = existsSync(lokasiBaca(LOKASI.wikiJudul))
+    ? readFileSync(lokasiBaca(LOKASI.wikiJudul), "utf8").split(/\r?\n/).filter((l) => l.trim() && !l.startsWith("#")) : [];
   readFileSync(fileWiki, "utf8").split(/\n\s*\n/).forEach((teks, i) => {
     if (teks.trim()) artikel.push({ judul: judul[i] ?? `artikel ${i + 1}`, teks, kelompok: `wiki:${judul[i] ?? i}` });
   });
@@ -36,7 +38,8 @@ if (!artikel.length) {
 
 const t0 = performance.now();
 const data = buatDataPembaca(artikel, { maksPerPola: Number(opsi.maks ?? 6000), negatif: Number(opsi.negatif ?? 0.3), seed: Number(opsi.seed ?? 1) });
-const keluar = opsi.keluar ?? "data/reader-id.jsonl";
+const keluar = opsi.keluar ?? LOKASI.pembaca;
+mkdirSync(dirname(keluar), { recursive: true });
 writeFileSync(keluar, data.map((d) => JSON.stringify(d)).join("\n") + "\n");
 
 const { train, val } = bagiData(data);

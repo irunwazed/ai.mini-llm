@@ -27,9 +27,14 @@ export function hasilkanDariId(
   const V = model.c.vocab, C = model.c.context;
   const baru: number[] = [];
   let keluar = "";
+  let sudah = 0; // jumlah token di cache yang masih berlaku
   for (let n = 0; n < panjang; n++) {
     const jendela = ids.slice(-C);
-    model.forward(jendela);
+    // KV-cache: selama jendela belum bergeser, cukup hitung token baru. Jika jendela bergeser
+    // (melebihi konteks), posisi semua token berubah sehingga harus dihitung ulang penuh.
+    if (sudah > 0 && ids.length <= C) model.forwardTambah(jendela, sudah);
+    else model.forward(jendela);
+    sudah = jendela.length;
     const z = model.logits.subarray((jendela.length - 1) * V, jendela.length * V);
     const id = sampel(z, { ...opsi, riwayat: ids.slice(-64) }, rng);
     ids.push(id);

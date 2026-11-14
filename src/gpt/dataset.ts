@@ -20,9 +20,9 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { bacaFile, daftarFile, terlihatHasilScan } from "../readers/index.js";
 import { bersihkanHalaman, perbaikiOCR } from "../text/clean.js";
-import { BOT, END, USER, type Tokenizer } from "./bpe.js";
+import { BOT, END, KONTEKS, USER, type Tokenizer } from "./bpe.js";
 
-export type Giliran = { user?: string; bot?: string };
+export type Giliran = { user?: string; bot?: string; konteks?: string };
 export interface Sumber { teks: string; percakapan: Giliran[][]; keterangan: string[] }
 export interface Urutan { x: Int32Array; y: Int32Array }
 
@@ -89,38 +89,64 @@ export function dataTeks(tok: Tokenizer, teks: string): { train: Int32Array; val
 }
 
 /**
- * Mode chat: satu urutan per percakapan, target hanya pada jawaban bot.
- * Jika percakapan lebih panjang dari konteks C, giliran paling awal dibuang.
+ * Satu percakapan dalam bentuk token, BELUM dipotong ke panjang konteks model.
+ * potongan[i] = satu giliran: ids token + latih (1 = token jawaban bot yang dilatih).
+ * Bentuk inilah yang disimpan oleh `bun run siapkan-data` (data/siap/<dataset>/), supaya dataset yang
+ * sama bisa dipakai model dengan konteks berapa pun.
  */
-export function dataChat(tok: Tokenizer, percakapan: Giliran[][], C: number): { train: Urutan[]; val: Urutan[] } {
+export interface PercakapanToken { kartu: boolean; potongan: { ids: number[]; latih: number[] }[] }
+
+export function encodePercakapan(tok: Tokenizer, giliran: Giliran[]): PercakapanToken {
   const idUser = tok.idToken(USER), idBot = tok.idToken(BOT), idEnd = tok.idToken(END);
   if (idUser === undefined || idBot === undefined || idEnd === undefined)
     throw new Error("Tokenizer model ini belum punya token percakapan. Pretrain ulang dengan versi kode terbaru.");
+  const idKonteks = tok.idToken(KONTEKS);
+  const potongan = giliran.map((g) => {
+    const ids: number[] = [], latih: number[] = [];
+    if (g.konteks !== undefined && idKonteks !== undefined) {
+      // kartu konteks: <|konteks|> nama: Sari; tinggal: Medan<|end|>  (dibaca, tidak dilatih)
+      const k = [idKonteks, ...tok.encode(" " + g.konteks.trim()), idEnd];
+      ids.push(...k); latih.push(...k.map(() => 0));
+    }
+    if (g.user !== undefined) {
+      const u = [idUser, ...tok.encode(" " + g.user.trim()), idEnd];
+      ids.push(...u); latih.push(...u.map(() => 0));
+    }
+    if (g.bot !== undefined) {
+      ids.push(idBot); latih.push(0);
+      const b = [...tok.encode(" " + g.bot.trim()), idEnd];
+      ids.push(...b); latih.push(...b.map(() => 1));
+    }
+    return { ids, latih };
+  }).filter((p) => p.ids.length);
+  return { kartu: giliran[0]?.konteks !== undefined && idKonteks !== undefined, potongan };
+}
+
+/**
+ * Potong percakapan agar muat di konteks C: giliran paling awal dibuang, KECUALI kartu konteks
+ * (selalu dipertahankan di depan). Target hanya pada token jawaban bot (lainnya −1 = diabaikan).
+ */
+export function potongKeKonteks(p: PercakapanToken, C: number): Urutan | null {
+  const kartu = p.kartu ? p.potongan[0] : null;
+  const isi = kartu ? p.potongan.slice(1) : p.potongan;
+  let mulai = 0;
+  const panjang = () => (kartu?.ids.length ?? 0) + isi.slice(mulai).reduce((s, q) => s + q.ids.length, 0);
+  while (mulai < isi.length - 1 && panjang() > C + 1) mulai++;
+  const dipakai = kartu ? [kartu, ...isi.slice(mulai)] : isi.slice(mulai);
+  const ids = dipakai.flatMap((q) => q.ids).slice(0, C + 1);
+  const latih = dipakai.flatMap((q) => q.latih).slice(0, C + 1);
+  if (ids.length < 2) return null;
+  return { x: Int32Array.from(ids.slice(0, -1)), y: Int32Array.from(ids.slice(1).map((id, i) => (latih[i + 1] ? id : -1))) };
+}
+
+/** Bagi percakapan bertoken menjadi latih/val (setiap percakapan ke-10 = val) lalu potong ke konteks C. */
+export function urutanChat(daftar: PercakapanToken[], C: number): { train: Urutan[]; val: Urutan[] } {
   const train: Urutan[] = [], val: Urutan[] = [];
-  percakapan.forEach((giliran, n) => {
-    // Susun token + tanda mana yang dilatih (1 = token jawaban bot, termasuk <|end|> penutupnya)
-    const potongan = giliran.map((g) => {
-      const ids: number[] = [], latih: number[] = [];
-      if (g.user !== undefined) {
-        const u = [idUser, ...tok.encode(" " + g.user.trim()), idEnd];
-        ids.push(...u); latih.push(...u.map(() => 0));
-      }
-      if (g.bot !== undefined) {
-        ids.push(idBot); latih.push(0);
-        const b = [...tok.encode(" " + g.bot.trim()), idEnd];
-        ids.push(...b); latih.push(...b.map(() => 1));
-      }
-      return { ids, latih };
-    });
-    let mulai = 0;
-    const panjang = () => potongan.slice(mulai).reduce((s, p) => s + p.ids.length, 0);
-    while (mulai < potongan.length - 1 && panjang() > C + 1) mulai++;
-    const ids = potongan.slice(mulai).flatMap((p) => p.ids).slice(0, C + 1);
-    const latih = potongan.slice(mulai).flatMap((p) => p.latih).slice(0, C + 1);
-    if (ids.length < 2) return;
-    const x = Int32Array.from(ids.slice(0, -1));
-    const y = Int32Array.from(ids.slice(1).map((id, i) => (latih[i + 1] ? id : -1)));
-    (n % 10 === 9 ? val : train).push({ x, y });
-  });
+  daftar.forEach((p, n) => { const u = potongKeKonteks(p, C); if (u) (n % 10 === 9 ? val : train).push(u); });
   return { train, val };
+}
+
+/** Mode chat langsung dari teks percakapan (encode + potong). */
+export function dataChat(tok: Tokenizer, percakapan: Giliran[][], C: number): { train: Urutan[]; val: Urutan[] } {
+  return urutanChat(percakapan.map((g) => encodePercakapan(tok, g)), C);
 }

@@ -16,7 +16,7 @@ import { argumen } from "./args.js";
 const { opsi } = argumen();
 const nama = opsi.name ?? gptTerbaru("chat");
 if (!nama) {
-  console.error("Belum ada model GPT percakapan. Jalankan dulu:\n  bun run train-gpt -- --data data/chat-id.jsonl --from wiki --name chat");
+  console.error("Belum ada model GPT percakapan. Jalankan dulu:\n  bun run siapkan-data -- --sumber obrolan --nama obrolan-v1 --tokenizer-dari wiki, lalu bun run train-gpt -- --dataset obrolan-v1 --from wiki --name chat");
   process.exit(1);
 }
 const { meta, P } = muatGPT(nama);

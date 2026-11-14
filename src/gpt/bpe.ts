@@ -28,8 +28,14 @@ export const UNK = "<unk>";
  *   <|user|> halo<|end|><|bot|> Halo! Ada yang bisa saya bantu?<|end|>
  */
 export const USER = "<|user|>", BOT = "<|bot|>", END = "<|end|>";
-export const KHUSUS = [USER, BOT, END];
-const RE_KHUSUS = /(<\|user\|>|<\|bot\|>|<\|end\|>)/;
+/**
+ * <|konteks|> membuka "kartu konteks" di awal percakapan (nama, topik, suasana, fakta pengguna):
+ *   <|konteks|> nama: Sari; tinggal: Medan; topik: masak<|end|><|user|> …
+ * Model lama yang dilatih sebelum token ini ada tidak memilikinya; kartu konteks lalu dilewati.
+ */
+export const KONTEKS = "<|konteks|>";
+export const KHUSUS = [USER, BOT, END, KONTEKS];
+const RE_KHUSUS = /(<\|user\|>|<\|bot\|>|<\|end\|>|<\|konteks\|>)/;
 const RE_PRA = / ?[\p{L}\p{N}]+| ?[^\s\p{L}\p{N}]+|\n/gu;
 
 export function praTokenisasi(teks: string): string[] {

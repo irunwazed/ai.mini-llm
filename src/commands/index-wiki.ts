@@ -15,8 +15,9 @@ import { bangunIndeks } from "../search/bm25.js";
 import type { InfoPeraturan } from "../training/metadata.js";
 import { simpanModel } from "../model.js";
 import type { Potongan } from "../types.js";
+import { LOKASI, lokasiBaca } from "../paths.js";
 
-const TEKS = "data/wiki-id.txt", JUDUL = "data/wiki-id.sources.txt", KELUAR = "model-wiki";
+const TEKS = lokasiBaca(LOKASI.wikiTeks), JUDUL = lokasiBaca(LOKASI.wikiJudul), KELUAR = LOKASI.modelWiki;
 if (!existsSync(TEKS) || !existsSync(JUDUL)) {
   console.error("Data Wikipedia belum ada. Jalankan dulu: bun run fetch-data");
   process.exit(1);

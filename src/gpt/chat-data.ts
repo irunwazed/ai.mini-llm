@@ -11,7 +11,7 @@
  * Percakapan beberapa giliran dibuat dengan merangkai niat secara wajar
  * (salam -> kabar -> jawaban kabar -> terima kasih -> pamit).
  *
- * Pakai:  bun run make-chat-data   ->   data/chat-id.jsonl
+ * Pakai:  bun run make-chat-data   ->   data/chat-id.jsonl  (lewat src/commands/make-chat-data.ts)
  */
 import { Rng } from "./random.js";
 
@@ -187,12 +187,12 @@ const ALUR: string[][] = [
 
 const SAPAAN = ["kak", "pak", "bu", "min", "bang", "mas", "mbak"];
 
-function pilih<T>(rng: Rng, a: T[]): T {
+export function pilih<T>(rng: Rng, a: T[]): T {
   return a[rng.int(a.length)];
 }
 
 /** Variasi kalimat pengguna: sapaan, huruf besar/kecil, tanda baca, salah ketik ringan. */
-function variasi(rng: Rng, s: string, bolehSapaan: boolean): string {
+export function variasi(rng: Rng, s: string, bolehSapaan: boolean): string {
   let t = s;
   if (bolehSapaan && rng.next() < 0.3) t = t.replace(/[?!.]?$/, (m) => ` ${pilih(rng, SAPAAN)}${m}`);
   const r = rng.next();
@@ -247,7 +247,7 @@ export const NAMA_ORANG = [
   "Citra", "Dimas", "Rahma", "Arif", "Nisa", "Taufik", "Wulan", "Yoga", "Reza", "Intan", "Hendra", "Lestari", "Galih", "Mega",
 ];
 /** Niat yang boleh muncul di tengah percakapan acak (tidak bergantung pada giliran sebelumnya). */
-const NIAT_BEBAS = [
+export const NIAT_BEBAS = [
   "salam", "pagi", "siang", "sore", "malam", "kabar", "terimaKasih", "identitas", "robot", "kemampuan", "pembuat", "umur",
   "bahasa", "pamit", "maaf", "oke", "pujian", "bingung", "luarKemampuan", "lelucon", "sedih", "tes", "mauTanya",
 ];
@@ -283,8 +283,4 @@ export function buatPercakapan(jumlahTunggal = 1200, jumlahAlur = 600, seed = 1)
   return hasil;
 }
 
-if (import.meta.main) {
-  const data = buatPercakapan();
-  await Bun.write("data/chat-id.jsonl", data.map((turns) => JSON.stringify({ turns })).join("\n") + "\n");
-  console.log(`data/chat-id.jsonl: ${data.length} percakapan dari ${Object.keys(NIAT).length} niat.`);
-}
+// Dataset lengkap (obrolan biasa + percakapan berkonteks) dibuat oleh src/commands/make-chat-data.ts.

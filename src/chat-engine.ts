@@ -22,7 +22,8 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { formatJawaban, jawab, labelSumber, type Jawaban, type Jejak } from "./answer/compose.js";
 import { jenisPertanyaan, type Jenis } from "./answer/question-type.js";
-import { Tokenizer } from "./gpt/bpe.js";
+import { KONTEKS, Tokenizer } from "./gpt/bpe.js";
+import { faktaPengguna, kartuKonteks } from "./gpt/context-card.js";
 import { balasDetail, type Giliran, type JejakGPT } from "./gpt/chat.js";
 import { gptTerbaru, muatGPT } from "./gpt/checkpoint.js";
 import { NAMA_ORANG } from "./gpt/chat-data.js";
@@ -92,6 +93,15 @@ const LANJUTAN = /^(kalau|kalo|lalu|terus|trus|bagaimana dengan|gimana dengan|un
 /** "kapan DIA lahir?", "apa fungsiNYA?" -> merujuk subjek sebelumnya. ("itu/ini" tidak: "apa itu X" bukan rujukan) */
 const RUJUK = /\b(dia|ia|beliau|mereka|tersebut)\b|\w{3,}nya\b/i;
 /** "lanjutkan", "lebih detail" -> tampilkan teks lengkap sumber sebelumnya. */
+/** Jawaban panjang (aturan/Wikipedia/internet) diringkas jadi kalimat pertama ≤ 20 kata untuk riwayat GPT. */
+function ringkasBalasan(teks: string, jalur: Jalur): string {
+  if (jalur === "obrolan" || jalur === "maksud") return teks;
+  const baris = teks.split("\n").map((x) => x.trim()).find((x) => x && !/^(Saya belum|Menurut|Jawaban singkat)/.test(x)) ?? teks;
+  const kalimat = baris.replace(/\[\d+\]/g, "").split(/(?<=[.!?])\s/)[0];
+  const kata = kalimat.split(/\s+/);
+  return kata.length > 20 ? kata.slice(0, 20).join(" ") + " …" : kalimat;
+}
+
 /** Ringkasan satu hasil pencarian untuk tabel perbandingan "tanpa konteks vs berkonteks". */
 function ringkasJawab(j: Jawaban) {
   const h = j.hasil[0];
@@ -201,10 +211,21 @@ export class MesinChat {
     const obrolan = (alasan: string): Respons | null => {
       if (!this.gpt) return null;
       const g = this.gpt;
-      // Riwayat untuk GPT: perkenalan nama dari memori + 2 giliran obrolan terakhir
       const konteks: Giliran[] = [];
-      if (namaPengguna) konteks.push({ user: `nama saya ${namaPengguna}`, bot: `Senang berkenalan dengan Anda, ${namaPengguna}! Ada yang bisa saya bantu?` });
-      konteks.push(...riwayat.filter((x) => x.jalur === "obrolan").slice(-2).map((x) => ({ user: x.user, bot: x.bot })));
+      let kartu: string | null = null;
+      if (g.tok.idToken(KONTEKS) !== undefined) {
+        // Model yang dilatih dengan kartu konteks: kartu fakta pengguna (nama, tinggal, pekerjaan, …) dari
+        // memori + SEMUA pesan sesi ini, lalu hingga 6 giliran terakhir dari jalur apa pun (jawaban panjang
+        // diringkas). Giliran lama yang tidak muat dipotong oleh balasDetail; kartu tidak pernah dipotong.
+        const fakta = faktaPengguna([...riwayat.map((x) => normalisasiSlang(x.user).teks), pesan], { namaMemori, catatanMemori: this.memori.semua().map((c) => c.teks) });
+        kartu = kartuKonteks(fakta);
+        konteks.push(...riwayat.slice(-6).map((x) => ({ user: x.user, bot: ringkasBalasan(x.bot, x.jalur) })));
+        proses.push({ tahap: "Kartu konteks GPT", hasil: kartu ? `<|konteks|> ${kartu}` : "belum ada fakta tentang pengguna", ms: 0, data: { kartu, fakta, giliran: konteks.length } });
+      } else {
+        // Model lama (tanpa token <|konteks|>): perkenalan nama dari memori + 2 giliran obrolan terakhir
+        if (namaPengguna) konteks.push({ user: `nama saya ${namaPengguna}`, bot: `Senang berkenalan dengan Anda, ${namaPengguna}! Ada yang bisa saya bantu?` });
+        konteks.push(...riwayat.filter((x) => x.jalur === "obrolan").slice(-2).map((x) => ({ user: x.user, bot: x.bot })));
+      }
       proses.push({ tahap: "Pilih jalur", hasil: alasan, ms: 0 });
 
       // LOOP BEST-OF-N: buat sampai 3 balasan (suhu makin tinggi), periksa niatnya, pakai yang cocok.
@@ -220,7 +241,7 @@ export class MesinChat {
       const t0 = performance.now();
       for (let i = 0; i < 3 && !r; i++) {
         const s = Math.min(1.5, suhu + 0.2 * i);
-        const x = balasDetail(g.model, g.tok, konteks, pesan, { suhu: s, seed: 1000 + 7 * i + Math.floor(Math.random() * 1e6), simulasi: true }, g.hurufKecil);
+        const x = balasDetail(g.model, g.tok, konteks, pesan, { suhu: s, seed: 1000 + 7 * i + Math.floor(Math.random() * 1e6), simulasi: true, kartu }, g.hurufKecil);
         const nb = niatBalasan(x.teks);
         const diterima = !target || (!!nb && nb.skor >= 0.25 && keluarga(nb.niat) === target);
         percobaan.push({ suhu: s, teks: x.teks, niat: nb?.niat ?? null, skor: nb?.skor ?? 0, diterima });

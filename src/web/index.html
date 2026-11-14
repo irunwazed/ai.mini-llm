@@ -60,6 +60,14 @@
   form.kirim { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); background: var(--panel); }
   form input { flex: 1; font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
   form button { font: inherit; padding: 10px 18px; border: 0; border-radius: 10px; background: var(--ink); color: #fff; cursor: pointer; }
+  #training { border-top: 1px solid var(--line); background: var(--panel); padding: 8px 16px; font-size: 13px; }
+  #training summary { cursor: pointer; color: var(--muted); }
+  #daftarProses { max-height: 300px; overflow-y: auto; }
+  .proses { border: 1px solid var(--line); border-radius: 8px; background: #fff; padding: 8px 10px; margin: 6px 0; }
+  .proses.berjalan { border-color: #2f6f4f; }
+  .proses.terhenti-tiba-tiba { border-color: #b5442e; }
+  .bar.besar { height: 10px; margin: 4px 0; }
+  svg.grafik { display: block; margin: 4px 0; background: #fafaf7; border-radius: 4px; }
   #memori { border-top: 1px solid var(--line); background: var(--panel); padding: 8px 16px; font-size: 13px; }
   #memori summary { cursor: pointer; color: var(--muted); }
   #memori ul { list-style: none; padding: 0; margin: 8px 0; max-height: 140px; overflow-y: auto; }
@@ -123,6 +131,7 @@
 <body>
 <header>
   <h1>LLM dari Nol — Chatbot</h1>
+  <a href="/latih" style="font-size:13px;color:#2f5fa7">Data &amp; training →</a>
   <div class="info" id="info">memuat model…</div>
   <div class="kontrol">
     <label>Mode
@@ -146,6 +155,11 @@
   <section id="chat">
     <div id="pesan"></div>
     <div class="contoh" id="contoh"></div>
+    <details id="training">
+      <summary>Training &amp; unduhan (<span id="jumlahProses">-</span>) — progres proses yang Anda jalankan di terminal</summary>
+      <div class="awam">Training dijalankan manual di terminal (lihat PANDUAN.md). Di sini progresnya dipantau: langkah, sisa waktu, dan grafik loss (abu = loss train, hitam = loss val). Loss val yang terus turun = model masih belajar; jika naik terus, model mulai menghafal dan sebaiknya dihentikan. "Hentikan dengan aman" menyimpan checkpoint dulu, dan bisa dilanjutkan dengan --resume.</div>
+      <div id="daftarProses"></div>
+    </details>
     <details id="memori">
       <summary>Memori (<span id="jumlahMemori">0</span> catatan) — disimpan manual, dipakai untuk menjawab, misalnya "siapa nama saya?"</summary>
       <ul id="daftarMemori"></ul>
@@ -334,6 +348,7 @@ function tampilProses(msg, pertanyaan, r) {
     if (p.tahap.startsWith("GPT pembaca") && p.data) l.append(blokPembaca(p.data));
     if (p.tahap === "Verifikasi jawaban pembaca") l.append(awam("Jawaban pembaca hanya dipakai jika (1) keyakinannya di atas ambang yang ditentukan saat training, (2) bentuknya cocok dengan pertanyaan (“berapa” harus berisi angka, “kapan” harus berisi waktu), dan (3) kalimat asalnya memuat sebagian besar kata topik pertanyaan. Jika tidak, jawaban disusun oleh penyusun aturan seperti biasa. Penjelasan dan dasar hukum di bawah jawaban singkat selalu dari penyusun aturan."));
     if (p.tahap === "Pahami konteks percakapan") l.append(blokKonteksPercakapan(p.data));
+    if (p.tahap === "Kartu konteks GPT") l.append(awam("Fakta tentang Anda diambil dari memori dan dari pesan-pesan Anda di percakapan ini dengan pola kalimat sederhana (“namaku …”, “aku tinggal di …”, “aku kerja sebagai …”, “hobiku …”, koreksi “eh salah, maksudku …”). Kartu ini ditaruh di awal prompt GPT supaya fakta tetap terbaca walaupun giliran lama sudah terpotong."));
     if (p.tahap === "Agent: pahami maksud" && p.data) l.append(blokNiat(p.data.niat));
     if (p.tahap === "Agent multi-mode" && p.data) l.append(blokAgent(p.data, "Agent bekerja dalam LOOP: (1) pahami maksud Anda, (2) pakai alat yang paling sesuai (jalur otomatis, dokumen aturan, GPT pembaca, Wikipedia lokal, memori, atau Wikipedia/DuckDuckGo di internet), (3) BANDINGKAN hasilnya dengan maksud tadi: apakah bentuk jawabannya benar (angka + satuan untuk “berapa”, tanggal untuk “kapan”, nama untuk “siapa”), apakah nama yang ditanya disebut, apakah kata yang ditanya ada, apakah sumbernya sesuai. (4) Jika belum cocok, kekurangannya menentukan langkah berikutnya: nama tidak disebut → cari artikel tentang nama itu; tanpa angka → baca artikel lengkap; kata hilang → coba padanan katanya; sumber salah → ganti sumber. Loop berhenti begitu cocok (atau setelah 8 langkah). (5) Terakhir semua hasil dibandingkan: jawaban utama + informasi pendukung dari sumber lain, atau pertanyaan balik jika belum yakin."));
     if (p.tahap === "Cari di internet") l.append(awam("Halaman internet tidak ada di indeks kita, jadi kalimat-kalimatnya dinilai seketika dengan BM25 mini: kata pertanyaan yang jarang muncul di kalimat-kalimat itu bernilai lebih tinggi (IDF). Nama diri di pertanyaan (mis. “Soekarno”) wajib ada di kalimat, dan artikel yang judulnya cocok dengan subjek diutamakan."));
@@ -670,11 +685,28 @@ function vektor(arr) {
 function blokGPT(g) {
   const w = el("div");
   w.append(awam("GPT tidak mencari di dokumen. Ia MENEBAK kata berikutnya satu per satu, berdasarkan pola yang ia pelajari dari ribuan contoh. Di bawah ini setiap tahap di dalam model ditunjukkan dengan angka sungguhan."));
-  w.append(rumus("Alur: teks → token → angka (embedding + posisi) → 4 lapisan × [attention → tambah & normalisasi → feed forward → tambah & normalisasi] → skor untuk setiap kata → peluang → pilih satu kata → ulangi"));
+  w.append(rumus("Alur: teks → token → angka (embedding + posisi) → beberapa lapisan × [attention → tambah & normalisasi → feed forward → tambah & normalisasi] → skor untuk setiap kata → peluang → pilih satu kata → ulangi"));
 
   w.append(h4("1. Teks → token"));
-  w.append(awam("Kalimat dipotong menjadi potongan kata (token) dengan BPE. Token gelap adalah penanda khusus: <|user|> = awal pesan Anda, <|bot|> = giliran bot menjawab, <|end|> = akhir giliran."));
+  w.append(awam("Kalimat dipotong menjadi potongan kata (token) dengan BPE. Token gelap adalah penanda khusus: <|user|> = awal pesan Anda, <|bot|> = giliran bot menjawab, <|end|> = akhir giliran, <|konteks|> = awal kartu konteks."));
   const c = el("div", "chips"); g.prompt.forEach((t) => c.append(el("span", "chip" + (/^<\|.*\|>$/.test(t) ? " khusus" : ""), t))); w.append(c);
+  w.append(h4("Konteks yang dibaca model"));
+  w.append(awam(g.kartu
+    ? `Kartu konteks di awal prompt: <|konteks|> ${g.kartu}. Kartu ini berisi fakta tentang Anda (dari memori dan pesan-pesan sebelumnya) dan tidak pernah dipotong, walaupun giliran lama harus dibuang karena konteks model terbatas. Ditambah ${g.giliranDipakai} giliran percakapan sebelumnya.`
+    : `Model membaca ${g.giliranDipakai ?? 0} giliran percakapan sebelumnya${g.kartu === null ? " (belum ada fakta tentang Anda untuk kartu konteks, atau model ini dilatih sebelum ada kartu konteks)" : ""}.`));
+  const ph = g.simulasi?.perhatian;
+  if (ph) {
+    w.append(awam("PERHATIAN KE KONTEKS: saat menulis setiap kata balasan, model “melihat” ke semua token sebelumnya (attention). Angka di bawah = rata-rata bagian perhatian yang jatuh ke setiap bagian prompt, dari semua lapisan dan head. Jika balasan seharusnya memakai informasi lama (mis. nama atau kota yang Anda sebut tadi), perhatian ke kartu/riwayat harus cukup besar dan token informasi itu muncul di daftar teratas."));
+    w.append(tabel(["Bagian", "Jumlah token", "Perhatian"], ph.segmen.map((s) => {
+      const sel = el("td", "num"); const bar = el("div", "bar"); const i = el("i"); i.style.width = Math.min(100, s.persen) + "%"; bar.append(i); sel.append(bar, document.createTextNode(` ${s.persen}%`));
+      return [td(s.nama), td(String(s.token), "num"), sel];
+    })));
+    w.append(tabel(["Lapisan", ...ph.segmen.map((s) => s.nama)], ph.perLapisan.map((row, l) => [td(`lapisan ${l + 1}`), ...row.map((x) => td(`${x}%`, "num"))])));
+    if (ph.teratas.length) {
+      w.append(awam("Token dari kartu konteks / riwayat yang paling banyak diperhatikan saat menulis balasan:"));
+      const cc = el("div", "chips"); ph.teratas.forEach((t) => cc.append(el("span", "chip", `${t.token} ${t.persen}% (${t.segmen})`))); w.append(cc);
+    }
+  }
 
   const s = g.simulasi;
   if (s) {
@@ -696,7 +728,7 @@ function blokGPT(g) {
     w.append(rumus(`perhatian_j = e^(skor_j) / Σ e^(skor semua token sebelumnya)\nHasil attention = Σ perhatian_j × V_j  (campuran informasi dari token-token yang diperhatikan)`));
 
     w.append(h4("4. Peta attention (semua token sekaligus)"));
-    w.append(awam("Satu baris = satu token yang sedang “melihat”. Kolom = token yang dilihat. Makin gelap kotaknya, makin besar perhatiannya. Bagian kanan-atas selalu kosong karena token tidak boleh melihat masa depan. Model punya 4 lapisan × 4 head; setiap head belajar memperhatikan hal yang berbeda. Hanya 16 token terakhir yang ditampilkan, jadi jumlah satu baris bisa kurang dari 100% (sisanya untuk token yang lebih awal). Pilih lapisan/head:"));
+    w.append(awam("Satu baris = satu token yang sedang “melihat”. Kolom = token yang dilihat. Makin gelap kotaknya, makin besar perhatiannya. Bagian kanan-atas selalu kosong karena token tidak boleh melihat masa depan. Model punya beberapa lapisan × beberapa head (lihat pilihan di bawah); setiap head belajar memperhatikan hal yang berbeda. Hanya 16 token terakhir yang ditampilkan, jadi jumlah satu baris bisa kurang dari 100% (sisanya untuk token yang lebih awal). Pilih lapisan/head:"));
     const wadah = el("div"); const pilih = el("div", "pilih-lh"); const peta = el("div", "peta");
     const gambar = (l, h) => {
       peta.innerHTML = ""; pilih.querySelectorAll("button").forEach((b) => b.classList.toggle("aktif", b.dataset.k === `${l}-${h}`));
@@ -710,7 +742,7 @@ function blokGPT(g) {
 
     const p = s.peluang;
     w.append(h4("5. Skor → peluang kata pertama jawaban"));
-    w.append(awam(`Setelah 4 lapisan, model memberi skor (logit) untuk SEMUA token di kosakatanya. Skor dibagi suhu (${p.suhu}): suhu kecil membuat pilihan lebih yakin, suhu besar lebih acak. Lalu e^(…) membuat semua angka positif, dan dibagi jumlah semuanya agar menjadi peluang. Berikut 6 token dengan peluang terbesar:`));
+    w.append(awam(`Setelah lapisan terakhir, model memberi skor (logit) untuk SEMUA token di kosakatanya. Skor dibagi suhu (${p.suhu}): suhu kecil membuat pilihan lebih yakin, suhu besar lebih acak. Lalu e^(…) membuat semua angka positif, dan dibagi jumlah semuanya agar menjadi peluang. Berikut 6 token dengan peluang terbesar:`));
     const t3 = el("table"); t3.innerHTML = `<tr><th>Token</th><th>Skor z</th><th>z ÷ suhu</th><th>e^(z/suhu − maks)</th><th>Peluang = e ÷ ${f2(p.jumlahExp, 3)}</th></tr>`;
     p.baris.forEach((b) => { const tr = el("tr"); tr.append(el("td", "mono", JSON.stringify(b.token)), el("td", "num", f2(b.z, 3)), el("td", "num", f2(b.zSuhu, 3)), el("td", "num", f2(b.exp, 4)), sel(b.p, (b.p * 100).toFixed(1) + "%")); t3.append(tr); });
     w.append(t3);
@@ -731,6 +763,67 @@ function blokGPT(g) {
   }
   return w;
 }
+
+// ---------------- Panel training & unduhan (memantau proses yang dijalankan manual di terminal) ----------------
+function durasi(d) {
+  if (d === null || !isFinite(d)) return "-";
+  const j = Math.floor(d / 3600), m = Math.floor((d % 3600) / 60), s = Math.floor(d % 60);
+  return j ? `${j}j ${m}m` : m ? `${m}m ${s}d` : `${s}d`;
+}
+function grafikLoss(riwayat) {
+  // grafik kecil loss train (abu) & val (hitam) dari riwayat evaluasi
+  const W = 260, H = 60, svgNS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNS, "svg"); svg.setAttribute("width", W); svg.setAttribute("height", H); svg.classList.add("grafik");
+  if (riwayat.length < 2) return svg;
+  const semua = riwayat.flatMap((r) => [r.lossTrain, r.lossVal]);
+  const lo = Math.min(...semua), hi = Math.max(...semua), x0 = riwayat[0].langkah, x1 = riwayat.at(-1).langkah;
+  const px = (l) => 4 + ((l - x0) / Math.max(1, x1 - x0)) * (W - 8), py = (v) => 4 + (1 - (v - lo) / Math.max(1e-9, hi - lo)) * (H - 8);
+  for (const [k, warna] of [["lossTrain", "#a8a59a"], ["lossVal", "#1d1d1b"]]) {
+    const p = document.createElementNS(svgNS, "polyline");
+    p.setAttribute("points", riwayat.map((r) => `${px(r.langkah)},${py(r[k])}`).join(" "));
+    p.setAttribute("fill", "none"); p.setAttribute("stroke", warna); p.setAttribute("stroke-width", "1.5");
+    svg.append(p);
+  }
+  return svg;
+}
+async function muatProgres() {
+  const daftar = await fetch("/api/progres").then((x) => x.json()).catch(() => []);
+  const berjalan = daftar.filter((p) => p.status === "berjalan").length;
+  $("#jumlahProses").textContent = berjalan ? `${berjalan} berjalan` : "tidak ada yang berjalan";
+  const w = $("#daftarProses"); w.innerHTML = "";
+  if (!daftar.length) { w.append(el("div", "awam", "Belum ada proses tercatat. Jalankan training/unduhan di terminal (lihat PANDUAN.md), lalu progresnya muncul di sini.")); return; }
+  for (const p of daftar) {
+    const k = el("div", "proses " + p.status.replace(/\s/g, "-"));
+    const judul = el("div", "hasil", `${p.jenis}: ${p.nama} — ${p.status}`);
+    k.append(judul);
+    const bar = el("div", "bar besar"); const i = el("i"); i.style.width = `${p.persen ?? 0}%`; bar.append(i); k.append(bar);
+    k.append(el("div", "", `${p.satuan} ${p.satuan === "MB" ? p.langkah.toFixed(1) : p.langkah}${p.total ? ` / ${p.total}` : ""}${p.persen !== null ? ` (${p.persen.toFixed(0)}%)` : ""}`
+      + `${p.status === "berjalan" && p.etaDetik !== null ? ` · sisa ±${durasi(p.etaDetik)}` : ""}`
+      + `${p.kecepatan ? ` · ${Math.round(p.kecepatan)} ${p.satuanKecepatan}` : ""}`
+      + ` · diperbarui ${durasi((Date.now() - Date.parse(p.diperbarui)) / 1000)} lalu`));
+    if (p.lossTrain !== null || p.lossVal !== null)
+      k.append(el("div", "", `loss train ${p.lossTrain?.toFixed(3) ?? "-"} · loss val ${p.lossVal?.toFixed(3) ?? "-"} · terbaik ${p.lossTerbaik?.toFixed(3) ?? "-"}`));
+    if (p.riwayat?.length > 1) k.append(grafikLoss(p.riwayat));
+    if (p.catatan) k.append(el("div", "hasil", p.catatan));
+    k.append(el("div", "hasil", `perintah: ${p.perintah}`));
+    if (p.status === "berjalan") {
+      const b = el("button", "tombol", "Hentikan dengan aman"); b.type = "button";
+      b.onclick = async () => {
+        if (!confirm(`Hentikan ${p.jenis}:${p.nama}? Proses akan menyimpan checkpoint dulu, lalu berhenti. Bisa dilanjutkan dengan --resume.`)) return;
+        await fetch("/api/progres/hentikan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jenis: p.jenis, nama: p.nama }) });
+        b.textContent = "Diminta berhenti…"; b.disabled = true;
+      };
+      k.append(b);
+    }
+    w.append(k);
+  }
+}
+let timerProgres = null;
+$("#training").addEventListener("toggle", () => {
+  clearInterval(timerProgres);
+  if ($("#training").open) { muatProgres(); timerProgres = setInterval(muatProgres, 3000); }
+});
+muatProgres();
 </script>
 </body>
 </html>

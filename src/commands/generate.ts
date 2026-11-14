@@ -18,7 +18,7 @@ import { argumen } from "./args.js";
 const { opsi, teks } = argumen();
 const nama = opsi.name ?? gptTerbaru("teks") ?? gptTerbaru();
 if (!nama) {
-  console.error("Belum ada model GPT. Latih dulu:  bun run train-gpt -- --data data/wiki-id.txt --name wiki --keep-case");
+  console.error("Belum ada model GPT. Latih dulu:  bun run siapkan-data -- --sumber wikipedia --nama wiki-v1 --huruf-asli, lalu bun run train-gpt -- --dataset wiki-v1 --name wiki");
   process.exit(1);
 }
 const { meta, P } = muatGPT(nama);

@@ -1,5 +1,7 @@
 # LLM dari Nol + Chatbot Aturan Pemerintah + GPT Mini
 
+> **Panduan praktis** per langkah (ambil data → siapkan → latih → evaluasi → jalankan, lengkap dengan lokasi setiap file): lihat [PANDUAN.md](PANDUAN.md). Semua langkah juga bisa dijalankan dan dipantau dari web: `bun run web` lalu buka http://localhost:3000/latih (progress bar, grafik loss, log lengkap, berhenti aman, upload file). Di terminal: `bun run status -- --ikuti`; Ctrl+C menghentikan dengan aman (lanjutkan dengan `--resume`).
+
 Proyek belajar tiga jalur, semuanya **Bun + TypeScript tanpa library ML**:
 
 1. **`lessons/`** belajar model bahasa dari nol secara matematika: bigram, n-gram, BPE, attention, GPT mini.
@@ -13,28 +15,40 @@ Nama file dan folder memakai bahasa Inggris. Teks yang dipelajari model dan perc
 ```
 llm/
 ├── documents/          ← TARUH FILE ATURAN DI SINI (.pdf .docx .txt .md, boleh bersubfolder)
-│   └── samples/        5 dokumen contoh FIKTIF untuk uji coba (boleh dihapus)
-├── model/              ← hasil training chatbot (dibuat oleh `bun run train`)
-├── gpt-models/         ← hasil training GPT, satu folder per nama model (dibuat oleh `bun run train-gpt`)
+│   ├── samples/        5 dokumen contoh FIKTIF, dirujuk soal evaluasi (jangan dihapus)
+│   ├── jdih/           unduhan `bun run fetch-jdih`
+│   └── upload/         upload dari halaman web /latih
 ├── data/
-│   ├── synonyms.txt    kamus padanan kata untuk chatbot (tanpa training ulang)
+│   ├── mentah/         LANGKAH 1 — data mentah
+│   │   ├── wikipedia/  wiki-id.txt + sumber.txt        (`bun run fetch-data`)
+│   │   ├── teks/       teks bahasa Indonesia milik Anda (upload / salin)
+│   │   ├── obrolan/    chat-id.jsonl                   (`bun run make-chat-data`)
+│   │   └── pembaca/    reader-id.jsonl                 (`bun run make-reader-data`)
+│   ├── siap/<dataset>/ LANGKAH 2 — tokenizer + token siap latih (`bun run siapkan-data`)
+│   ├── synonyms.txt    kamus padanan kata (tanpa training ulang)
+│   ├── slang.txt       kamus bahasa santai → baku
 │   └── corpus.txt      teks kecil untuk pelajaran
-├── evaluation/
-│   └── questions.jsonl soal uji akurasi chatbot
+├── model/              LANGKAH 3 — indeks chatbot aturan (`bun run train`)
+├── model-wiki/         LANGKAH 3 — indeks Wikipedia (`bun run index-wiki`)
+├── gpt-models/         LANGKAH 3 — satu folder per model GPT (`bun run train-gpt` / `train-reader`)
+├── progres/            progres + log setiap proses (`bun run status`, halaman /latih)
+├── evaluation/         LANGKAH 4 — soal uji (questions, conversations, reasoning)
 ├── lessons/            01_bigram, 02_ngram, 03_bpe, 04_attention, 05_mini_gpt
 └── src/
+    ├── paths.ts        SEMUA lokasi data di satu tempat
     ├── readers/        membaca PDF, DOCX, TXT/MD (dengan cache)
     ├── text/           pembersih header/OCR, tokenisasi, stemmer, sinonim, pemotong pasal
     ├── training/       metadata & perubahan aturan, glosarium & singkatan, word2vec
-    ├── search/         BM25 + pencarian hibrida
+    ├── search/         BM25 + pencarian hibrida + internet (API resmi)
     ├── answer/         jenis pertanyaan, pemecah kalimat, penyusun jawaban, pengutip kalimat internet
     ├── gpt/            GPT dari nol: bpe, layers, model, optimizer, sampling, worker, dataset, checkpoint,
-    │                   reader (GPT pembaca) + reader-data (data latih pembaca otomatis)
+    │                   prepared (dataset siap latih), progress (Pelacak), reader (GPT pembaca), data obrolan/konteks
     ├── rag/            RAG: konteks percakapan (dialog), ambil konteks (retrieve), baca + verifikasi (pipeline)
     ├── agent/          mode agent: semua mode + pencarian internet
     ├── reasoning/      agent penalaran (kalkulator, kalender, barisan, …) + pemeriksa relevansi
+    ├── web/            index.html (chat), latih.html (data & training), jobs.ts (proses dari web)
     ├── model.ts        simpan / muat model chatbot
-    └── commands/       train, search, chat, eval, train-gpt, generate, test-gpt
+    └── commands/       satu file per perintah `bun run …`
 ```
 
 ## Perintah
@@ -51,6 +65,7 @@ bun install
 |---|---|
 | Training dari folder `documents/` | `bun run train` |
 | Training dari folder lain | `bun run train -- --dokumen D:/aturan` |
+| Unduh peraturan JDIH BKN ke `documents/jdih/` | `bun run fetch-jdih` (crawler otomatis; ulangi kapan saja — yang sudah ada tidak diunduh lagi) |
 | Tanya satu pertanyaan | `bun run search -- "berapa hari cuti tahunan?"` |
 | Chatbot interaktif | `bun run chat` |
 | Chatbot mode agent (semua mode + internet) | `bun run chat -- --agent` (atau ketik `:agent` di dalam chat) |
@@ -64,23 +79,25 @@ bun install
 | Uji GPT pembaca (EM/F1 di artikel val) | `bun run eval-reader` |
 | Uji soal logika & matematika | `bun run eval-reasoning` |
 
-**GPT, alur lengkap seperti ChatGPT (dalam versi mini)**
+**GPT, alur lengkap seperti ChatGPT (dalam versi mini)**: ambil data → siapkan → latih → evaluasi
 
 ```
 bun run test-gpt                                                         # 0. pastikan semua turunan benar
-bun run fetch-data                                                       # 1. unduh ±10 MB Wikipedia Indonesia
-bun run train-gpt -- --data data/wiki-id.txt --name wiki --keep-case     # 2. pretraining ±45 menit
+bun run fetch-data                                                       # 1. unduh ±10 MB Wikipedia -> data/mentah/wikipedia/
+bun run siapkan-data -- --sumber wikipedia --nama wiki-v1 --huruf-asli   # 2. tokenizer + token -> data/siap/wiki-v1/
+bun run train-gpt -- --dataset wiki-v1 --name wiki                       # 3. pretraining ±45 menit -> gpt-models/wiki/
 bun run generate -- --name wiki "Indonesia adalah"                       #    coba hasilkan teks
-bun run make-chat-data                                                   # 3. buat dataset percakapan
-bun run train-gpt -- --data data/chat-id.jsonl --from wiki --name chat --steps 1500   # 4. fine-tuning chat ±10 menit
+bun run make-chat-data                                                   # 1. data percakapan -> data/mentah/obrolan/
+bun run siapkan-data -- --sumber obrolan --nama obrolan-v1 --tokenizer-dari wiki   # 2. pakai tokenizer model wiki
+bun run train-gpt -- --dataset obrolan-v1 --from wiki --name chat --steps 1500     # 3. fine-tuning chat ±10 menit
 bun run chat-gpt                                                         # 5. ngobrol dengan GPT
-bun run index-wiki                                                       # 6. indeks Wikipedia untuk pertanyaan fakta
-bun run chat                                                             # 7. chatbot lengkap: aturan + fakta + obrolan
-bun run web                                                              # 8. versi web + panel "cara kerja" -> http://localhost:3000
-bun run make-reader-data                                                 # 9. data latih GPT pembaca (otomatis dari Wikipedia)
-bun run train-reader -- --from wiki --name reader --steps 2400           # 10. latih GPT pembaca untuk RAG (±50 menit)
-bun run eval-reader                                                      #     EM / F1 / tolak benar di artikel val
-bun run chat -- --rag                                                    # 11. chatbot dengan RAG (atau mode "RAG" di web)
+bun run index-wiki                                                       # 3. indeks Wikipedia untuk pertanyaan fakta
+bun run chat                                                             # 5. chatbot lengkap: aturan + fakta + obrolan
+bun run web                                                              # 5. versi web -> http://localhost:3000 (+ /latih)
+bun run make-reader-data                                                 # 1. data latih GPT pembaca -> data/mentah/pembaca/
+bun run train-reader -- --from wiki --name reader --steps 2400           # 3. latih GPT pembaca untuk RAG (±50 menit)
+bun run eval-reader                                                      # 4. EM / F1 / tolak benar di artikel val
+bun run chat -- --rag                                                    # 5. chatbot dengan RAG (atau mode "RAG" di web)
 ```
 
 **Penting saat training:**
@@ -90,9 +107,13 @@ bun run chat -- --rag                                                    # 11. c
 
 | Tujuan | Perintah |
 |---|---|
-| Lanjutkan training | `bun run train-gpt -- --data data/wiki-id.txt --name wiki --resume --minutes 30` |
-| Latih dari folder aturan | `bun run train-gpt -- --data documents --name rules` |
-| Gabung beberapa sumber | `--data data/wiki-id.txt,documents` |
+| Lanjutkan model yang sama | `bun run train-gpt -- --dataset wiki-v1 --name wiki --resume --minutes 30` |
+| Lanjutkan model dengan **data baru** | `bun run siapkan-data -- --sumber wikipedia,teks --nama wiki-v2 --tokenizer-dari wiki`, lalu `bun run train-gpt -- --dataset wiki-v2 --name wiki --resume` |
+| Latih dari dokumen aturan | `bun run siapkan-data -- --sumber aturan --nama aturan-v1`, lalu `bun run train-gpt -- --dataset aturan-v1 --name rules` |
+| Gabung beberapa sumber | `--sumber wikipedia,teks,aturan` (atau path file/folder) |
+| Pindahkan data dari struktur lama | `bun run migrasi-data` |
+
+`--resume`/`--from` menolak dataset yang tokenizernya berbeda dari model (sidik tokenizer di `data/siap/<dataset>/info.json`). Cara lama `--data <file>` (tokenisasi di memori) masih bisa dipakai.
 
 **Lain-lain**: `bun run typecheck`, dan pelajaran `bun run lesson:1` sampai `bun run lesson:5`.
 
@@ -346,6 +367,8 @@ Memori dipakai dengan dua cara:
 
 Untuk uji coba, pilih **Mode** (otomatis, hanya aturan, hanya Wikipedia, atau hanya GPT) dan geser **Suhu GPT** untuk melihat pengaruhnya pada balasan. Di terminal, ringkasan yang sama tampil dengan `bun run chat -- --proses` atau perintah `:proses`.
 
+**Halaman data & training (`/latih`).** Halaman ini menjalankan setiap langkah dengan tombol: ① ambil data (Wikipedia, JDIH, data obrolan/pembaca, upload file), ② siapkan dataset, ③ latih (model baru / lanjutkan / fine-tune, chatbot aturan, indeks Wikipedia, GPT pembaca), ④ evaluasi. Ada juga peta data (setiap folder, ukuran, dipakai langkah apa). Panel **Proses** menampilkan progress bar, grafik loss, log berjalan, dan tombol berhenti aman. Perintah yang boleh dijalankan dibatasi daftar putih di `src/web/jobs.ts`. Server hanya mendengar `127.0.0.1` kecuali diberi `--host`, dan menjalankan proses atau upload hanya diterima dari komputer yang menjalankan server. Proses yang dimulai dari web tetap berjalan walau server web dimatikan.
+
 Logika percakapan ada di `src/chat-engine.ts` dan dipakai bersama oleh terminal maupun web.
 
 Setiap pesan diproses berurutan:
@@ -468,6 +491,56 @@ Sampling     p_i ∝ exp(z_i / suhu), lalu repetition penalty, top-k, dan top-p
 
 **Opsi `generate`**: `--length` (200 token), `--temperature` (0.8), `--top-k` (40), `--top-p` (0.9), `--repeat-penalty` (1.15), `--stop-newline`, `--seed`.
 
+## GPT yang paham konteks percakapan
+
+Model obrolan lama (`chat`) sulit memakai informasi dari giliran sebelumnya, karena empat hal:
+
+1. **Data latihnya.** Kalimat templat satu niat per giliran: balasannya tidak pernah bergantung pada riwayat.
+2. **Modelnya kecil.** ±0,46 juta parameter, konteks 128 token, kosakata 2.000. Kata Indonesia terpecah jadi banyak token, sehingga riwayat cepat habis.
+3. **Riwayat yang dikirim sedikit.** Hanya 2 giliran obrolan terakhir.
+4. **Tidak ada KV-cache.** Konteks panjang jadi lambat.
+
+Yang diubah:
+
+| Bagian | Perubahan | File |
+|---|---|---|
+| Data | percakapan **berkonteks**: ingat fakta, pilih satu dari beberapa fakta, kata ganti ("dia suka makan apa?"), koreksi ("eh salah, maksudku Bandung"), topik lanjutan, ringkas, suasana, "belum tahu", kartu konteks | `src/gpt/chat-context-data.ts` |
+| Nilai uji terpisah | nama, kota, pekerjaan, hobi, makanan, dan nama hewan dibagi latih/uji (setiap nilai ke-5 = uji), sehingga eval memakai nilai yang tidak pernah dilihat | `daftarSlot()` |
+| Kartu konteks | `<|konteks|> nama: Sari; tinggal: Medan; pekerjaan: guru<|end|>` di awal prompt; diisi dari memori dan pesan-pesan sesi; tidak pernah dipotong | `src/gpt/context-card.ts`, token baru di `src/gpt/bpe.ts` |
+| Riwayat | hingga 6 giliran terakhir dari semua jalur (jawaban panjang diringkas), sebanyak muat di konteks | `src/chat-engine.ts` |
+| Model | preset `besar`: dim 128, 6 lapisan, 4 head, FF 512, konteks 256, kosakata 4.000, pre-LN (±2,2 juta parameter) | `src/commands/train-gpt.ts` |
+| Kecepatan | KV-cache: token baru hanya menghitung 1 baris; Key/Value token lama dipakai ulang. Hasilnya identik dengan forward penuh (diuji di `test-gpt`) | `GPT.forwardTambah` |
+| Pengamatan | panel GPT di web: kartu konteks + "perhatian ke konteks" (persen attention ke kartu, riwayat, pesan sekarang, balasan sendiri; per lapisan; token lama yang paling diperhatikan) | `src/gpt/inspect.ts` |
+
+Cara melatih (CPU, bisa dicicil; rincian di [PANDUAN.md](PANDUAN.md) langkah 1–3):
+
+```
+bun run fetch-data -- --target-mb 60                                                    # 1. lebih banyak Wikipedia
+bun run siapkan-data -- --sumber wikipedia --nama wiki-v1 --huruf-asli                  # 2. tokenizer + token
+bun run train-gpt -- --dataset wiki-v1 --name wiki2 --size besar --minutes 60           # 3. pretraining
+bun run train-gpt -- --dataset wiki-v1 --name wiki2 --resume --minutes 60               #    ulangi beberapa kali
+bun run make-chat-data                                                                  # 1. obrolan biasa + berkonteks
+bun run siapkan-data -- --sumber obrolan --nama obrolan-v1 --tokenizer-dari wiki2       # 2. tokenizer SAMA dengan wiki2
+bun run train-gpt -- --dataset obrolan-v1 --from wiki2 --name chat2 --steps 3000 --eval-every 200   # 3. fine-tune
+bun run eval-konteks -- --name chat2 --banding chat                                     # 4. bandingkan dengan model lama
+```
+
+**Cara mengukur (`bun run eval-konteks`).** Percakapan uji memakai nilai slot yang tidak pernah dilatih. Balasan dianggap benar jika memuat nilai yang diharapkan, misalnya kota yang disebut tiga giliran sebelumnya. Ada juga kolom **ablasi**: riwayat dan kartu dihapus, hanya pertanyaan terakhir. Jika akurasi tanpa konteks tetap tinggi, model sekadar menebak. Jika turun drastis, model benar-benar membaca konteks.
+
+**Hasil sekarang** (300 percakapan uji, CPU 16 thread):
+
+| Model | Pretraining | Fine-tune | Benar (dengan konteks / ablasi) | Perplexity jawaban bot |
+|---|---|---|---|---|
+| `chat` (lama, small) | `wiki`, 3,1 juta token | 1.620 percakapan | 1% / 1% | 274 |
+| `chat2` (besar) | `wiki2`, **hanya 300 langkah** (loss val 5,40) | 9.520 percakapan, 800 langkah (loss val 0,26) | 2% / 1% | 3,98 |
+
+Artinya:
+
+- **Bentuk jawaban sudah benar.** `chat2` menjawab "namaku siapa?" dengan "Tentu, nama Anda …" dan "aku tinggal di mana?" dengan "Anda tinggal di …"; `chat` masih membalas dengan sapaan atau penjelasan fitur.
+- **Nilainya belum disalin dari konteks.** Isian diambil dari nilai yang dihafal saat latih ("Anda tinggal di Pekanbaru", padahal pengguna menyebut Blitar). Ablasi hampir sama, jadi model belum benar-benar membaca riwayat.
+- **Penyebab utamanya pretraining yang terlalu pendek.** `wiki2` baru 300 langkah (±0,3 juta token). Kemampuan "menyalin token dari belakang" (induction head) biasanya baru muncul setelah jutaan token. Langkah berikutnya: lanjutkan `wiki2` dengan `--resume` beberapa jam, fine-tune ulang `chat2`, lalu ukur lagi dengan `eval-konteks`.
+- **Chatbot tidak dirugikan.** `eval-chat` tetap 74/74 di mode normal, agent, dan RAG. Fakta tentang pengguna (nama, kota, dll.) tetap dijawab oleh jalur memori/maksud, bukan oleh GPT.
+
 ## Agar hasil GPT bagus
 
 **Data harus jauh lebih banyak dari parameter.** Aturan praktisnya sekitar 20 token latih per parameter. Model bawaan punya ±0,46 juta parameter, jadi butuh jutaan token. `data/corpus.txt` hanya ±1.500 token, sehingga model pasti menghafal.
@@ -482,9 +555,9 @@ Sampling     p_i ∝ exp(z_i / suhu), lalu repetition penalty, top-k, dan top-p
 
 Perplexity = e^(loss val), bisa dibaca sebagai "model ragu di antara sekian token". Early stopping otomatis berhenti saat loss val tidak membaik, dan checkpoint yang disimpan selalu yang loss val-nya terbaik.
 
-**Dua tahap seperti ChatGPT.** Pretraining di Wikipedia mengajari bahasa. Fine-tuning dengan `data/chat-id.jsonl` mengajari format percakapan: setelah `<|bot|>` model membalas, lalu berhenti dengan `<|end|>`. Saat fine-tuning, loss hanya dihitung pada token jawaban bot (masking), sehingga model belajar membalas, bukan meniru pertanyaan.
+**Dua tahap seperti ChatGPT.** Pretraining di Wikipedia mengajari bahasa. Fine-tuning dengan data obrolan (`data/mentah/obrolan/chat-id.jsonl`) mengajari format percakapan: setelah `<|bot|>` model membalas, lalu berhenti dengan `<|end|>`. Saat fine-tuning, loss hanya dihitung pada token jawaban bot (masking), sehingga model belajar membalas, bukan meniru pertanyaan.
 
-**Menambah kemampuan obrolan.** Tambahkan niat dan contoh kalimat di `src/gpt/chat-data.ts`, jalankan `bun run make-chat-data`, lalu fine-tune ulang dari `wiki`.
+**Menambah kemampuan obrolan.** Tambahkan niat dan contoh kalimat di `src/gpt/chat-data.ts`, jalankan `bun run make-chat-data` dan `bun run siapkan-data -- --sumber obrolan --nama obrolan-v2 --tokenizer-dari wiki`, lalu fine-tune ulang dari `wiki`.
 
 **Training paralel.** Batch dibagi ke beberapa worker thread. Bobot dibagi lewat `SharedArrayBuffer`, dan gradien semua worker dijumlahkan sebelum satu update Adam. Hasilnya identik dengan satu thread, hanya lebih cepat.
 
@@ -517,7 +590,7 @@ Perplexity 1,05 pada percakapan berarti model hampir hafal pola dataset. Itu mem
 - **Jawaban aturan tidak memakai GPT.** GPT kecil yang dilatih di CPU menghasilkan teks bergaya peraturan, tetapi isinya sering mengarang pasal dan angka. Karena itu `:gpt` selalu diberi label "bukan dasar hukum".
 - **GPT butuh data dan waktu.** Ukuran bawaan sekitar 0,46 juta parameter, dilatih ±45 menit di CPU. Hasilnya runtut per frasa, tetapi isinya sering tidak masuk akal. Model sebesar ChatGPT punya ratusan miliar parameter.
 - **Obrolan GPT terbatas pada pola yang dilatih.** Model membalas sapaan dan basa-basi yang mirip dataset percakapan. Pertanyaan bebas di luar itu bisa dibalas dengan kalimat yang tidak nyambung.
-- **Teks Wikipedia berlisensi CC BY-SA 4.0.** Daftar artikel sumber ada di `data/wiki-id.sources.txt`.
+- **Teks Wikipedia berlisensi CC BY-SA 4.0.** Daftar artikel sumber ada di `data/mentah/wikipedia/sumber.txt`.
 - **PDF hasil scan tanpa OCR** dilewati, dan kualitas OCR menentukan akurasi chatbot maupun GPT.
 - **Word2vec chatbot butuh data besar.** Di bawah 200 ribu token, word2vec otomatis dilewati karena justru menurunkan akurasi.
 - **Ambang keyakinan chatbot** disetel dari soal uji yang sedikit. Tulis 30 sampai 50 soal dari dokumen Anda sendiri, lalu setel ulang.

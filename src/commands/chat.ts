@@ -129,7 +129,7 @@ function perintah(masukan: string): boolean {
   const gptCmd = masukan.match(/^:gpt\s+(.+)$/s);
   if (gptCmd) {
     const g = muatGPTTeks();
-    if (!g) console.log("Belum ada model GPT pretrain. Latih dulu: bun run train-gpt -- --data data/wiki-id.txt --name wiki --keep-case\n");
+    if (!g) console.log("Belum ada model GPT pretrain. Latih dulu: bun run siapkan-data -- --sumber wikipedia --nama wiki-v1 --huruf-asli, lalu bun run train-gpt -- --dataset wiki-v1 --name wiki\n");
     else {
       process.stdout.write(`\nGPT (${g.nama})> ${gptCmd[1]}`);
       hasilkanTeks(g.model, g.tok, gptCmd[1], 80, { suhu: 0.8, topK: 40, topP: 0.9, penaltiUlang: 1.15 }, (s) => process.stdout.write(s));

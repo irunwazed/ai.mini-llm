@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data & training — LLM dari Nol</title>
+<style>
+  :root {
+    --bg: #f6f5f1; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6a64; --line: #e3e1d9;
+    --hijau: #1f6f5c; --biru: #2f5fa7; --merah: #a5442e; --kuning: #a37a12;
+    --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 system-ui, "Segoe UI", sans-serif; color: var(--ink); background: var(--bg); }
+  header { display: flex; align-items: baseline; gap: 16px; padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
+  header h1 { font-size: 18px; margin: 0; }
+  header a { color: var(--biru); }
+  header .langkah-nav { display: flex; gap: 6px; margin-left: auto; }
+  header .langkah-nav a { text-decoration: none; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink); font-size: 13px; }
+  main { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(360px, 1fr); gap: 16px; padding: 16px 20px; align-items: start; }
+  @media (max-width: 1100px) { main { grid-template-columns: 1fr; } }
+  section.kartu { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+  section.kartu > h2 { font-size: 16px; margin: 0 0 4px; display: flex; gap: 8px; align-items: center; }
+  .nomor { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--ink); color: #fff; font-size: 13px; }
+  .awam { color: var(--muted); font-size: 13px; margin: 2px 0 10px; }
+  .alat { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 8px 0; background: #fcfcfa; }
+  .alat h3 { font-size: 14px; margin: 0 0 4px; }
+  .alat .ke { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  form.baris { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; margin-top: 6px; }
+  label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 2px; }
+  label.cek { flex-direction: row; align-items: center; gap: 4px; color: var(--ink); font-size: 13px; }
+  input, select { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: #fff; min-width: 0; }
+  input[type=number] { width: 90px; } input.nama { width: 140px; }
+  button { font: inherit; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--ink); background: var(--ink); color: #fff; cursor: pointer; }
+  button.sekunder { background: #fff; color: var(--ink); }
+  button.bahaya { background: #fff; color: var(--merah); border-color: var(--merah); }
+  button:disabled { opacity: .5; cursor: default; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  code, .mono { font-family: var(--mono); font-size: 12px; }
+  .lencana { display: inline-block; padding: 0 7px; border-radius: 999px; font-size: 11.5px; border: 1px solid currentColor; }
+  .berjalan { color: var(--biru); } .selesai { color: var(--hijau); } .gagal, .terhenti-tiba-tiba { color: var(--merah); } .dihentikan, .berhenti { color: var(--kuning); }
+  .peringatan { color: var(--merah); font-size: 12px; }
+  .pesan { font-size: 13px; margin-top: 6px; }
+  .pesan.galat { color: var(--merah); }
+  .bar { height: 10px; background: var(--line); border-radius: 5px; overflow: hidden; margin: 6px 0; }
+  .bar > i { display: block; height: 100%; background: var(--biru); transition: width .4s; }
+  .proses { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 8px 0; background: #fff; }
+  .proses.aktif { border-color: var(--biru); }
+  .proses header-x { display: block; }
+  .proses .judul { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .proses .judul b { font-size: 14px; }
+  .proses .kecil { font-size: 12px; color: var(--muted); }
+  pre.log { background: #1d1d1b; color: #e8e6df; font: 11.5px/1.45 var(--mono); padding: 8px 10px; border-radius: 6px; max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word; margin: 6px 0 0; }
+  svg.grafik { display: block; margin: 6px 0; background: #fafaf7; border-radius: 4px; }
+  #unggah { border: 2px dashed var(--line); border-radius: 8px; padding: 14px; text-align: center; color: var(--muted); }
+  #unggah.atas { border-color: var(--biru); color: var(--biru); }
+  .kosong { color: var(--muted); font-size: 13px; }
+  .alur { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  aside { position: sticky; top: 64px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Data &amp; training</h1>
+  <a href="/">← kembali ke chat</a>
+  <nav class="langkah-nav">
+    <a href="#peta">Peta data</a><a href="#l1">① Ambil</a><a href="#l2">② Siapkan</a><a href="#l3">③ Latih</a><a href="#l4">④ Evaluasi</a>
+  </nav>
+</header>
+<main>
+<div>
+  <section class="kartu" id="peta">
+    <h2>Peta data — disimpan di mana?</h2>
+    <div class="awam">Setiap langkah membaca dari satu tempat dan menulis ke tempat berikutnya:
+      <span class="alur">① ambil → data mentah · ② siapkan → data/siap/&lt;dataset&gt; · ③ latih → model · ④ evaluasi</span>. Tabel ini dibaca langsung dari disk.</div>
+    <table id="tabelPeta"></table>
+    <div id="peringatanLama" class="peringatan"></div>
+    <form class="baris" id="formMigrasi" data-perintah="migrasi-data" hidden><span class="kecil">File yang sedang ditulis (diubah &lt; 2 menit lalu) otomatis dilewati.</span><button>Pindahkan ke lokasi baru</button></form>
+  </section>
+
+  <section class="kartu" id="l1">
+    <h2><span class="nomor">1</span> Ambil data</h2>
+    <div class="awam">Mengumpulkan data MENTAH. Semua bisa dijalankan ulang: yang sudah diunduh dilewati.</div>
+    <div class="alat">
+      <h3>Unduh Wikipedia Indonesia</h3><div class="ke">→ data/mentah/wikipedia/wiki-id.txt</div>
+      <form class="baris" data-perintah="fetch-data"><label>Target total (MB)<input type="number" name="target-mb" value="60" min="1" max="2000"></label><button>Mulai unduh</button></form>
+    </div>
+    <div class="alat">
+      <h3>Unduh dokumen aturan JDIH BKN</h3><div class="ke">→ documents/jdih/</div>
+      <form class="baris" data-perintah="fetch-jdih">
+        <label>Jumlah PDF baru (0 = semua)<input type="number" name="batas" value="20" min="0"></label>
+        <label>Cari judul (opsional)<input name="judul" placeholder="mis. cuti"></label>
+        <label>Tahun (opsional)<input type="number" name="tahun" min="1945" max="2100"></label>
+        <label class="cek"><input type="checkbox" name="kering"> daftar saja</label>
+        <button>Mulai unduh</button></form>
+    </div>
+    <div class="alat">
+      <h3>Buat data obrolan (percakapan latih)</h3><div class="ke">→ data/mentah/obrolan/chat-id.jsonl</div>
+      <form class="baris" data-perintah="make-chat-data"><label>Percakapan berkonteks<input type="number" name="konteks" value="6000" min="0"></label><button>Buat</button></form>
+    </div>
+    <div class="alat">
+      <h3>Buat data GPT pembaca</h3><div class="ke">→ data/mentah/pembaca/reader-id.jsonl</div>
+      <form class="baris" data-perintah="make-reader-data"><label class="cek"><input type="checkbox" name="dengan-aturan"> ikut memakai dokumen aturan</label><button>Buat</button></form>
+    </div>
+    <div class="alat">
+      <h3>Upload file</h3>
+      <form class="baris" id="formUnggah">
+        <label>Tujuan<select name="tujuan"><option value="aturan">Dokumen aturan (PDF/DOCX/TXT/MD) → documents/upload/</option><option value="teks">Teks bahasa Indonesia (.txt) → data/mentah/teks/</option></select></label>
+      </form>
+      <div id="unggah">Seret file ke sini, atau <label style="display:inline;color:var(--biru);cursor:pointer"><u>pilih file</u><input type="file" id="pilihBerkas" multiple hidden></label></div>
+      <div class="pesan" id="pesanUnggah"></div>
+    </div>
+  </section>
+
+  <section class="kartu" id="l2">
+    <h2><span class="nomor">2</span> Siapkan data (tokenisasi)</h2>
+    <div class="awam">Data mentah diubah menjadi token dan disimpan sebagai DATASET di data/siap/&lt;nama&gt;/. Training (langkah 3) hanya membaca dataset ini.
+      Untuk <b>melanjutkan</b> atau <b>fine-tune</b> model yang sudah ada, pakai <b>tokenizer dari model itu</b> — id token harus berarti potongan kata yang sama.</div>
+    <form class="baris" data-perintah="siapkan-data" id="formSiapkan">
+      <label>Sumber
+        <span style="display:flex;gap:10px;flex-wrap:wrap">
+          <label class="cek"><input type="checkbox" name="sumber" value="wikipedia" checked> Wikipedia</label>
+          <label class="cek"><input type="checkbox" name="sumber" value="teks"> teks sendiri</label>
+          <label class="cek"><input type="checkbox" name="sumber" value="aturan"> dokumen aturan</label>
+          <label class="cek"><input type="checkbox" name="sumber" value="obrolan"> obrolan (terpisah)</label>
+        </span></label>
+      <label>Nama dataset<input class="nama" name="nama" required pattern="[\w.\-]{1,40}" placeholder="mis. wiki-v3"></label>
+      <label>Tokenizer<select name="tokenizer-dari" id="pilihTokenizer"><option value="">baru (untuk model baru)</option></select></label>
+      <label>Kosakata (tokenizer baru)<input type="number" name="vocab" value="4000" min="100" max="20000"></label>
+      <label class="cek"><input type="checkbox" name="huruf-asli" checked> huruf asli</label>
+      <button>Siapkan</button>
+    </form>
+    <h3 style="font-size:14px;margin:14px 0 4px">Dataset yang sudah disiapkan</h3>
+    <table id="tabelDataset"></table>
+  </section>
+
+  <section class="kartu" id="l3">
+    <h2><span class="nomor">3</span> Latih</h2>
+    <div class="awam">Model GPT membaca dataset dari langkah 2. Ada tiga cara:
+      <b>model baru</b> (mulai dari nol),
+      <b>lanjutkan</b> (model yang sama dilatih lagi dengan dataset baru — riwayat dataset dicatat di model),
+      <b>fine-tune</b> (mulai dari bobot model lain, disimpan sebagai model baru).</div>
+    <div class="alat">
+      <h3>Latih GPT</h3>
+      <form class="baris" data-perintah="train-gpt" id="formLatih">
+        <label>Cara<select name="_cara" id="caraLatih"><option value="baru">Model baru</option><option value="lanjut">Lanjutkan model (resume)</option><option value="dari">Fine-tune dari model</option></select></label>
+        <label id="lblModelAsal" hidden>Model<select name="_asal" id="modelAsal"></select></label>
+        <label id="lblNama">Nama model<input class="nama" name="name" pattern="[\w.\-]{1,40}" placeholder="mis. wiki3"></label>
+        <label>Dataset<select name="dataset" id="pilihDataset" required></select></label>
+        <label id="lblUkuran">Ukuran<select name="size"><option value="small">small (±0,46 jt)</option><option value="medium">medium (±1 jt)</option><option value="besar" selected>besar (±2,2 jt, konteks 256)</option></select></label>
+        <label>Durasi<select name="_durasi" id="jenisDurasi"><option value="minutes">menit</option><option value="steps">langkah</option></select></label>
+        <label>Jumlah<input type="number" name="_jumlah" value="60" min="1"></label>
+        <label>Eval tiap<input type="number" name="eval-every" value="100" min="5"></label>
+        <details style="flex-basis:100%"><summary class="kecil" style="cursor:pointer;color:var(--muted)">opsi lanjutan</summary>
+          <div class="baris" style="display:flex;gap:12px;margin-top:6px">
+            <label>lr<input type="number" name="lr" step="0.0001" placeholder="otomatis"></label>
+            <label>batch<input type="number" name="batch" placeholder="16"></label>
+            <label>dropout<input type="number" name="dropout" step="0.05" placeholder="0.1"></label>
+            <label>patience<input type="number" name="patience" placeholder="5"></label>
+          </div></details>
+        <button>Mulai training</button>
+      </form>
+      <div class="pesan" id="pesanLatih"></div>
+    </div>
+    <div class="alat"><h3>Model GPT yang ada</h3><table id="tabelModel"></table></div>
+    <div class="alat">
+      <h3>Indeks chatbot</h3>
+      <form class="baris" data-perintah="train"><span class="kecil">Dokumen aturan (documents/) → model/</span><label class="cek"><input type="checkbox" name="tanpa-embedding"> tanpa word2vec</label><button>Latih chatbot aturan</button></form>
+      <form class="baris" data-perintah="index-wiki"><span class="kecil">Wikipedia → model-wiki/</span><button>Indeks Wikipedia</button></form>
+    </div>
+    <div class="alat">
+      <h3>GPT pembaca (RAG)</h3><div class="ke">data/mentah/pembaca/ → gpt-models/&lt;nama&gt;</div>
+      <form class="baris" data-perintah="train-reader"><label>Dari model<select name="from" class="pilihModel"></select></label><label>Nama<input class="nama" name="name" value="reader2"></label><label>Menit<input type="number" name="minutes" value="30"></label><button>Latih pembaca</button></form>
+    </div>
+  </section>
+
+  <section class="kartu" id="l4">
+    <h2><span class="nomor">4</span> Evaluasi</h2>
+    <div class="awam">Mengukur hasil. Keluarannya tampil sebagai log di panel proses.</div>
+    <div class="alat"><form class="baris" data-perintah="eval"><span>Chatbot aturan (acuan 90,5%)</span><label class="cek"><input type="checkbox" name="rag"> + GPT pembaca</label><button class="sekunder">Jalankan</button></form></div>
+    <div class="alat"><form class="baris" data-perintah="eval-chat"><span>Percakapan "nyambung" (acuan 74/74)</span><label class="cek"><input type="checkbox" name="agent"> mode agent</label><label class="cek"><input type="checkbox" name="rag"> mode RAG</label><button class="sekunder">Jalankan</button></form></div>
+    <div class="alat"><form class="baris" data-perintah="eval-reasoning"><span>Penalaran (acuan 42/42)</span><button class="sekunder">Jalankan</button></form></div>
+    <div class="alat"><form class="baris" data-perintah="eval-reader"><span>GPT pembaca (F1)</span><label>Model<select name="name" class="pilihModel" data-mode="pembaca"></select></label><button class="sekunder">Jalankan</button></form></div>
+    <div class="alat"><form class="baris" data-perintah="eval-konteks"><span>GPT memakai konteks</span><label>Model<select name="name" class="pilihModel" data-mode="chat"></select></label><label>Pembanding<select name="banding" class="pilihModel" data-mode="chat" data-kosong="1"></select></label><label>Jumlah<input type="number" name="jumlah" value="200"></label><button class="sekunder">Jalankan</button></form></div>
+  </section>
+</div>
+
+<aside>
+  <section class="kartu">
+    <h2>Proses</h2>
+    <div class="awam">Semua proses dari halaman ini dan dari terminal. Progress bar diperbarui otomatis; klik "log" untuk melihat keluaran lengkap. "Hentikan" pada training = berhenti dengan aman (checkpoint disimpan dulu, bisa dilanjutkan).</div>
+    <div id="daftarProses"><div class="kosong">memuat…</div></div>
+  </section>
+</aside>
+</main>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const el = (tag, cls, teks) => { const e = document.createElement(tag); if (cls) e.className = cls; if (teks !== undefined) e.textContent = teks; return e; };
+const ukuran = (b) => b >= 1e9 ? (b / 1e9).toFixed(1) + " GB" : b >= 1e6 ? (b / 1e6).toFixed(1) + " MB" : b >= 1e3 ? (b / 1e3).toFixed(0) + " KB" : b + " B";
+const waktu = (iso) => iso ? new Date(iso).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" }) : "-";
+const durasi = (d) => { if (d === null || d === undefined || !isFinite(d)) return "-"; const j = Math.floor(d / 3600), m = Math.floor((d % 3600) / 60), s = Math.floor(d % 60); return j ? `${j}j ${m}m` : m ? `${m}m ${s}d` : `${s}d`; };
+const api = async (url, init) => { const r = await fetch(url, init); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.statusText); return j; };
+const tabel = (t, kepala, baris) => { t.innerHTML = ""; const h = el("tr"); kepala.forEach((k) => h.append(el("th", "", k))); t.append(h); baris.forEach((b) => { const tr = el("tr"); b.forEach((c) => tr.append(c instanceof Node ? c : el("td", typeof c === "number" ? "num" : "", c ?? "-"))); t.append(tr); }); };
+const td = (isi, cls = "") => { const x = el("td", cls); isi instanceof Node ? x.append(isi) : (x.textContent = isi); return x; };
+
+let model = [], dataset = [];
+
+// ---------------- peta data, dataset, model ----------------
+async function muatPeta() {
+  const p = await api("/api/data");
+  tabel($("#tabelPeta"), ["Langkah", "Data", "Lokasi", "Isi", "Ukuran", "File", "Diubah", "Dibuat oleh → dipakai oleh"], p.map((x) => [
+    x.langkah ? "①②③④"[x.langkah - 1] : "·", x.nama, td(el("code", "", x.lokasi)), x.isi, td(x.ada ? ukuran(x.ukuran) : "belum ada", "num"), td(String(x.berkas), "num"), waktu(x.diubah), `${x.dari} → ${x.dipakai}`,
+  ]));
+  const lama = p.filter((x) => x.lama && x.ada);
+  $("#peringatanLama").textContent = lama.length ? `Masih di lokasi lama: ${lama.map((x) => x.lokasi).join(", ")}. Pindahkan dengan tombol di bawah atau: bun run migrasi-data (setelah unduhan yang sedang berjalan selesai).` : "";
+  $("#formMigrasi").hidden = !lama.length;
+}
+async function muatModel() {
+  model = await api("/api/model");
+  const t = $("#tabelModel");
+  tabel(t, ["Model", "Jenis", "Ukuran", "Langkah", "Loss val", "Riwayat data", "Tokenizer"], model.map((m) => [
+    td(el("b", "", m.nama)), m.mode + (m.dasar ? ` (dari ${m.dasar})` : ""), `${m.config.lapisan}×${m.config.dim}, konteks ${m.config.konteks}`, m.langkah, td(m.lossVal?.toFixed(3) ?? "-", "num"),
+    m.dataset.map((d) => `${d.nama} (langkah ${d.mulai}–${d.selesai})`).join(" → "), td(el("code", "", m.sidik)),
+  ]));
+  // pilihan model di formulir
+  const isi = (sel, filter) => { const v = sel.value; sel.innerHTML = ""; if (sel.dataset.kosong) sel.append(new Option("—", "")); model.filter(filter).forEach((m) => sel.append(new Option(`${m.nama} (${m.mode})`, m.nama))); if (v) sel.value = v; };
+  document.querySelectorAll(".pilihModel").forEach((s) => isi(s, (m) => !s.dataset.mode || m.mode === s.dataset.mode));
+  isi($("#modelAsal"), (m) => m.mode !== "pembaca");
+  const tk = $("#pilihTokenizer"), v = tk.value; tk.innerHTML = ""; tk.append(new Option("baru (untuk model baru)", ""));
+  model.filter((m) => m.mode !== "pembaca").forEach((m) => tk.append(new Option(`dari model ${m.nama} (${m.config.kosakata} token)`, m.nama))); tk.value = v;
+  pilihanDataset();
+}
+async function muatDataset() {
+  dataset = await api("/api/dataset");
+  tabel($("#tabelDataset"), ["Dataset", "Jenis", "Sumber", "Token latih / val", "Tokenizer", "Disiapkan"], dataset.length ? dataset.map((d) => [
+    td(el("b", "", d.nama)), d.jenis + (d.percakapan ? ` (${d.percakapan} percakapan)` : ""),
+    td((() => { const w = el("span", "", d.sumber.map((s) => s.nama).join(", ")); if (d.sumberBerubah.length) { w.append(el("div", "peringatan", `sumber berubah sejak disiapkan: ${d.sumberBerubah.join(", ")} — siapkan ulang agar data baru ikut`)); } return w; })()),
+    td(`${d.token.latih.toLocaleString("id-ID")} / ${d.token.val.toLocaleString("id-ID")}`, "num"), td(el("span", "", `${d.tokenizer.asal} · ${d.tokenizer.sidik}`)), waktu(d.dibuat),
+  ]) : [["(belum ada — siapkan di atas)", "", "", "", "", ""]]);
+  pilihanDataset();
+}
+/** Pilihan dataset di formulir latih: untuk lanjutkan/fine-tune hanya dataset dengan tokenizer model itu. */
+function pilihanDataset() {
+  const cara = $("#caraLatih").value, asal = model.find((m) => m.nama === $("#modelAsal").value);
+  const sel = $("#pilihDataset"), v = sel.value; sel.innerHTML = "";
+  const cocok = dataset.filter((d) => cara === "baru" ? d.jenis === "teks" && d.tokenizer.asal === "baru" : asal && d.tokenizer.sidik === asal.sidik);
+  if (!cocok.length) sel.append(new Option(cara === "baru" ? "(siapkan dataset teks dengan tokenizer baru dulu)" : "(tidak ada dataset dengan tokenizer model ini — siapkan dengan 'tokenizer dari model')", ""));
+  cocok.forEach((d) => sel.append(new Option(`${d.nama} (${d.jenis}, ${(d.token.latih / 1e6).toFixed(2)} jt token)`, d.nama)));
+  if ([...sel.options].some((o) => o.value === v)) sel.value = v;
+}
+$("#caraLatih").onchange = $("#modelAsal").onchange = () => {
+  const cara = $("#caraLatih").value;
+  $("#lblModelAsal").hidden = cara === "baru";
+  $("#lblNama").hidden = cara === "lanjut";
+  $("#lblUkuran").hidden = cara !== "baru";
+  pilihanDataset();
+};
+
+// ---------------- menjalankan perintah ----------------
+function opsiDari(form) {
+  const o = {};
+  for (const elx of form.elements) {
+    if (!elx.name || elx.name.startsWith("_") || elx.disabled || elx.closest("[hidden]")) continue;
+    if (elx.type === "checkbox") { if (elx.name === "sumber") continue; if (elx.checked) o[elx.name] = true; }
+    else if (elx.value !== "") o[elx.name] = elx.value;
+  }
+  const sumber = [...form.querySelectorAll('input[name=sumber]:checked')].map((x) => x.value);
+  if (sumber.length) o.sumber = sumber.join(",");
+  return o;
+}
+async function jalankan(perintah, opsi, pesanEl) {
+  try {
+    const j = await api("/api/job", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ perintah, opsi }) });
+    if (pesanEl) { pesanEl.className = "pesan"; pesanEl.textContent = `Dimulai: ${j.judul} (${j.id}). Lihat panel Proses.`; }
+    terbuka.add(j.id); muatProses();
+  } catch (e) { if (pesanEl) { pesanEl.className = "pesan galat"; pesanEl.textContent = e.message; } else alert(e.message); }
+}
+document.querySelectorAll("form[data-perintah]").forEach((f) => {
+  if (f.id === "formLatih") return;
+  let pesan = f.parentElement.querySelector(".pesan"); if (!pesan) { pesan = el("div", "pesan"); f.after(pesan); }
+  f.onsubmit = (e) => {
+    e.preventDefault();
+    const o = opsiDari(f);
+    if (f.dataset.perintah === "siapkan-data") { if (!o.sumber) { pesan.className = "pesan galat"; pesan.textContent = "Pilih minimal satu sumber."; return; } if (o["tokenizer-dari"]) { delete o.vocab; delete o["huruf-asli"]; } }
+    jalankan(f.dataset.perintah, o, pesan);
+  };
+});
+$("#formLatih").onsubmit = (e) => {
+  e.preventDefault();
+  const f = e.target, o = opsiDari(f), cara = $("#caraLatih").value, asal = $("#modelAsal").value;
+  if (!o.dataset) { $("#pesanLatih").className = "pesan galat"; $("#pesanLatih").textContent = "Pilih dataset (siapkan dulu di langkah 2)."; return; }
+  if (cara === "lanjut") { o.name = asal; o.resume = true; delete o.size; }
+  if (cara === "dari") { o.from = asal; delete o.size; if (!o.name) { $("#pesanLatih").className = "pesan galat"; $("#pesanLatih").textContent = "Isi nama model baru."; return; } }
+  if (cara === "baru" && !o.name) { $("#pesanLatih").className = "pesan galat"; $("#pesanLatih").textContent = "Isi nama model."; return; }
+  o[$("#jenisDurasi").value] = f.elements._jumlah.value;
+  if (dataset.find((d) => d.nama === o.dataset)?.jenis === "teks" && model.find((m) => m.nama === o.name) && cara === "baru") { if (!confirm(`Model "${o.name}" sudah ada dan akan DITIMPA oleh model baru. Lanjut?`)) return; }
+  jalankan("train-gpt", o, $("#pesanLatih"));
+};
+
+// ---------------- upload ----------------
+async function unggah(files) {
+  if (!files.length) return;
+  const fd = new FormData(); fd.append("tujuan", $("#formUnggah").elements.tujuan.value);
+  for (const f of files) fd.append("berkas", f);
+  const p = $("#pesanUnggah"); p.className = "pesan"; p.textContent = `Mengunggah ${files.length} file…`;
+  try { const j = await api("/api/upload", { method: "POST", body: fd }); p.textContent = `Tersimpan: ${j.berkas.map((b) => b.lokasi).join(", ")}. ${j.saran}`; muatPeta(); }
+  catch (e) { p.className = "pesan galat"; p.textContent = e.message; }
+}
+const zona = $("#unggah");
+zona.ondragover = (e) => { e.preventDefault(); zona.classList.add("atas"); };
+zona.ondragleave = () => zona.classList.remove("atas");
+zona.ondrop = (e) => { e.preventDefault(); zona.classList.remove("atas"); unggah([...e.dataTransfer.files]); };
+$("#pilihBerkas").onchange = (e) => unggah([...e.target.files]);
+
+// ---------------- panel proses ----------------
+const terbuka = new Set(), posisiLog = new Map();
+function grafik(riwayat) {
+  const W = 300, H = 60, ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("width", W); svg.setAttribute("height", H); svg.classList.add("grafik");
+  if (!riwayat || riwayat.length < 2) return svg;
+  const v = riwayat.flatMap((r) => [r.lossTrain, r.lossVal]), lo = Math.min(...v), hi = Math.max(...v), a = riwayat[0].langkah, b = riwayat.at(-1).langkah;
+  const px = (l) => 4 + ((l - a) / Math.max(1, b - a)) * (W - 8), py = (x) => 4 + (1 - (x - lo) / Math.max(1e-9, hi - lo)) * (H - 8);
+  for (const [k, w] of [["lossTrain", "#a8a59a"], ["lossVal", "#2f5fa7"]]) { const p = document.createElementNS(ns, "polyline"); p.setAttribute("points", riwayat.map((r) => `${px(r.langkah)},${py(r[k])}`).join(" ")); p.setAttribute("fill", "none"); p.setAttribute("stroke", w); p.setAttribute("stroke-width", "1.5"); svg.append(p); }
+  return svg;
+}
+async function muatProses() {
+  const [jobs, progres] = await Promise.all([api("/api/job"), api("/api/progres")]);
+  const wadah = $("#daftarProses");
+  // gabungkan: proses dari web (punya log) + proses dari terminal (hanya progres)
+  const daftar = jobs.map((j) => ({ job: j, pr: progres.find((p) => p.pid === j.pid) }));
+  for (const p of progres) if (!jobs.some((j) => j.pid === p.pid)) daftar.push({ job: null, pr: p });
+  daftar.sort((a, b) => ((b.job?.mulai ?? b.pr.mulai) > (a.job?.mulai ?? a.pr.mulai) ? 1 : -1));
+  if (!daftar.length) { wadah.innerHTML = '<div class="kosong">Belum ada proses. Mulai dari langkah ① di kiri.</div>'; return; }
+  const ada = new Set();
+  for (const { job, pr } of daftar.slice(0, 30)) {
+    const id = job?.id ?? `${pr.jenis}-${pr.nama}`; ada.add(id);
+    let k = wadah.querySelector(`[data-id="${CSS.escape(id)}"]`);
+    if (!k) { k = el("div", "proses"); k.dataset.id = id; wadah.append(k); }
+    const status = job ? (job.status === "berjalan" && pr?.status === "berhenti" ? "berhenti" : job.status) : pr.status;
+    k.className = "proses" + (status === "berjalan" ? " aktif" : "");
+    k.innerHTML = "";
+    const judul = el("div", "judul");
+    judul.append(el("b", "", job?.judul ?? `${pr.jenis}: ${pr.nama}`), el("span", `lencana ${status.replace(/\s/g, "-")}`, status), el("span", "kecil", job ? `mulai ${waktu(job.mulai)}${job.selesai ? ` · selesai ${waktu(job.selesai)}` : ""}` : `dari terminal · ${waktu(pr.mulai)}`));
+    k.append(judul);
+    if (job) k.append(el("div", "mono kecil", `bun run ${job.perintah}${job.argv.length ? " -- " + job.argv.join(" ") : ""}`));
+    if (pr) {
+      const bar = el("div", "bar"), i = el("i"); i.style.width = `${pr.persen ?? (status === "selesai" ? 100 : 0)}%`; bar.append(i); k.append(bar);
+      k.append(el("div", "kecil", `${pr.satuan} ${pr.satuan === "MB" ? pr.langkah.toFixed(1) : pr.langkah}${pr.total ? ` / ${pr.total}` : ""}${pr.persen !== null ? ` (${pr.persen.toFixed(0)}%)` : ""}`
+        + `${status === "berjalan" && pr.etaDetik !== null ? ` · sisa ±${durasi(pr.etaDetik)}` : ""}${pr.kecepatan ? ` · ${Math.round(pr.kecepatan)} ${pr.satuanKecepatan}` : ""}`
+        + `${pr.lossTrain !== null ? ` · loss ${pr.lossTrain.toFixed(3)}` : ""}${pr.lossVal !== null ? ` (val ${pr.lossVal.toFixed(3)}, terbaik ${pr.lossTerbaik?.toFixed(3)})` : ""}`));
+      if (pr.riwayat?.length > 1) { k.append(grafik(pr.riwayat)); k.append(el("div", "kecil", "abu = loss train · biru = loss val (makin rendah makin baik; jika biru naik terus, model mulai menghafal)")); }
+      if (pr.catatan) k.append(el("div", "kecil", pr.catatan));
+    } else if (status === "berjalan") k.append(el("div", "kecil", "berjalan… (lihat log)"));
+    const tombol = el("div"); tombol.style.cssText = "display:flex;gap:8px;margin-top:6px";
+    if (job) {
+      const bLog = el("button", "sekunder", terbuka.has(id) ? "tutup log" : "log");
+      bLog.onclick = () => { terbuka.has(id) ? terbuka.delete(id) : terbuka.add(id); muatProses(); };
+      tombol.append(bLog);
+    }
+    if (status === "berjalan") {
+      const bStop = el("button", "bahaya", "Hentikan");
+      bStop.onclick = async () => {
+        if (!confirm("Hentikan proses ini? Training/unduhan akan menyimpan dulu, lalu berhenti (bisa dilanjutkan).")) return;
+        bStop.disabled = true;
+        if (job) await api(`/api/job/${job.id}/hentikan`, { method: "POST" });
+        else await api("/api/progres/hentikan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jenis: pr.jenis, nama: pr.nama }) });
+        muatProses();
+      };
+      tombol.append(bStop);
+    }
+    k.append(tombol);
+    if (job && terbuka.has(id)) {
+      const pre = el("pre", "log"); k.append(pre);
+      const lama = k.dataset.log ?? ""; pre.textContent = lama; pre.scrollTop = pre.scrollHeight;
+      bacaLogBaru(job.id, k, pre);
+    }
+  }
+  for (const k of [...wadah.children]) if (k.dataset.id && !ada.has(k.dataset.id)) k.remove();
+  // data di disk mungkin berubah karena proses selesai
+  if (daftar.some(({ job }) => job && job.status !== "berjalan" && !selesaiDilihat.has(job.id))) {
+    daftar.forEach(({ job }) => job && job.status !== "berjalan" && selesaiDilihat.add(job.id));
+    muatPeta(); muatDataset(); muatModel();
+  }
+}
+const selesaiDilihat = new Set();
+async function bacaLogBaru(id, kotak, pre) {
+  const dari = posisiLog.get(id) ?? 0;
+  const r = await api(`/api/job/${id}/log?dari=${dari}`).catch(() => null);
+  if (!r) return;
+  posisiLog.set(id, r.sampai);
+  if (r.teks) {
+    const bawah = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
+    kotak.dataset.log = ((kotak.dataset.log ?? "") + r.teks).slice(-150000);
+    pre.textContent = kotak.dataset.log;
+    if (bawah) pre.scrollTop = pre.scrollHeight;
+  }
+}
+
+async function semua() { await Promise.all([muatPeta(), muatDataset(), muatModel()]); muatProses(); }
+semua();
+setInterval(muatProses, 2000);
+</script>
+</body>
+</html>

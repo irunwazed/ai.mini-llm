@@ -9,6 +9,7 @@
  * 2. Uji overfit: model harus bisa menghafal satu kalimat (loss -> hampir 0).
  *    Jika gagal, ada yang salah di forward/backward/optimizer.
  * 3. Uji overfit pembaca: model harus bisa belajar menunjuk rentang jawaban di satu contoh.
+ * 4. KV-cache: menghasilkan token satu per satu (forwardTambah) harus sama persis dengan forward penuh.
  *
  * Pakai:  bun run test-gpt
  */
@@ -102,6 +103,26 @@ function ujiOverfitPembaca() {
   console.log(`  pembaca: loss akhir = ${loss.toFixed(4)}, rentang = ${argmaks(0)}..${argmaks(1)} (target 6..8)  ${ok ? "LULUS" : "GAGAL"}`);
 }
 
+/** KV-cache: forwardTambah (token demi token) harus menghasilkan logits yang sama dengan forward penuh. */
+function ujiKVCache(preLN: boolean) {
+  const c: GPTConfig = { vocab: 30, context: 24, dim: 16, heads: 4, layers: 3, ff: 32, preLN };
+  const m = new GPT(c, undefined, 5), rng = new Rng(11);
+  const ids = Array.from({ length: 20 }, () => rng.int(c.vocab));
+  let terburuk = 0;
+  m.forward(ids.slice(0, 6));
+  for (let t = 7; t <= ids.length; t++) {
+    m.forwardTambah(ids.slice(0, t), t - 1);
+    const bertahap = Array.from(m.logits.subarray((t - 1) * c.vocab, t * c.vocab));
+    const pembanding = new GPT(c, m.P);
+    pembanding.forward(ids.slice(0, t));
+    const penuh = pembanding.logits.subarray((t - 1) * c.vocab, t * c.vocab);
+    for (let v = 0; v < c.vocab; v++) terburuk = Math.max(terburuk, Math.abs(bertahap[v] - penuh[v]));
+  }
+  const ok = terburuk < 1e-9;
+  if (!ok) gagal++;
+  console.log(`  ${preLN ? "pre-LN " : "post-LN"}: selisih logits terbesar = ${terburuk.toExponential(2)}  ${ok ? "LULUS" : "GAGAL"}`);
+}
+
 console.log("1. Gradient check (setiap tensor, Float64):");
 gradientCheck(false);
 gradientCheck(true);
@@ -115,5 +136,8 @@ ujiOverfit(false);
 ujiOverfit(true);
 console.log("3. Uji overfit GPT pembaca (200 langkah Adam):");
 ujiOverfitPembaca();
+console.log("4. KV-cache: forward bertahap = forward penuh:");
+ujiKVCache(false);
+ujiKVCache(true);
 console.log(gagal ? `\n${gagal} uji GAGAL` : "\nSemua uji LULUS");
 process.exit(gagal ? 1 : 0);

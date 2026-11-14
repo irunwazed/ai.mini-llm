@@ -252,6 +252,78 @@ export class GPT {
   }
 
   /**
+   * KV-CACHE: forward hanya untuk token BARU (posisi `dari` .. T−1).
+   * Baris 0..dari−1 harus sudah dihitung oleh forward/forwardTambah sebelumnya dengan awalan yang SAMA.
+   * Semua operasi transformer bekerja per baris (per token), kecuali attention: token baru perlu
+   * Key & Value semua token sebelumnya, dan itu sudah tersimpan di cache tiap lapisan (L.k, L.v).
+   * Jadi menghasilkan token ke-n cukup menghitung 1 baris, bukan n baris -> jauh lebih cepat.
+   * Hasilnya sama persis dengan forward(ids) (diuji di test-gpt). Hanya untuk inferensi (tanpa dropout).
+   */
+  forwardTambah(ids: ArrayLike<number>, dari: number): void {
+    if (dari <= 0 || this.dropoutAktif) { this.forward(ids); return; }
+    const { dim: D, heads: H, ff: F, vocab: V, preLN } = this.c;
+    const T = ids.length;
+    if (T > this.c.context) throw new Error(`panjang ${T} melebihi konteks ${this.c.context}`);
+    const P = this.P, sD = Math.sqrt(D), tok = this.off("tok"), B = T - dari;
+    const r = (a: Vec, lebar = D) => a.subarray(dari * lebar, T * lebar); // baris baru saja
+
+    for (let t = dari; t < T; t++)
+      for (let d = 0; d < D; d++) this.x0[t * D + d] = sD * P[tok + ids[t] * D + d] + this.pe[t * D + d];
+    let x = this.x0;
+    const dh = D / H, skala = 1 / Math.sqrt(dh), skor = new Float64Array(T);
+    for (let l = 0; l < this.c.layers; l++) {
+      const L = this.cache[l], o = (s: string) => this.off(`l${l}.${s}`);
+      r(L.x).set(r(x));
+      if (preLN) layerNormForward(r(L.x), B, D, P, o("ln1g"), o("ln1b"), r(L.u), r(L.ln1hat), L.ln1r.subarray(dari, T));
+      else r(L.u).set(r(L.x));
+      linearForward(r(L.u), B, D, D, P, o("wq"), o("bq"), r(L.q));
+      linearForward(r(L.u), B, D, D, P, o("wk"), o("bk"), r(L.k));
+      linearForward(r(L.u), B, D, D, P, o("wv"), o("bv"), r(L.v));
+      // attention baris baru terhadap SEMUA Key/Value sebelumnya (yang lama diambil dari cache)
+      r(L.o).fill(0);
+      for (let h = 0; h < H; h++) {
+        const c = h * dh;
+        for (let i = dari; i < T; i++) {
+          let maks = -Infinity;
+          for (let j = 0; j <= i; j++) {
+            let s = 0;
+            for (let d = 0; d < dh; d++) s += L.q[i * D + c + d] * L.k[j * D + c + d];
+            skor[j] = s * skala;
+            if (skor[j] > maks) maks = skor[j];
+          }
+          let jumlah = 0;
+          for (let j = 0; j <= i; j++) { skor[j] = Math.exp(skor[j] - maks); jumlah += skor[j]; }
+          for (let j = 0; j <= i; j++) {
+            const p = skor[j] / jumlah;
+            for (let d = 0; d < dh; d++) L.o[i * D + c + d] += p * L.v[j * D + c + d];
+          }
+        }
+      }
+      linearForward(r(L.o), B, D, D, P, o("wo"), o("bo"), r(L.a));
+      for (let i = dari * D; i < T * D; i++) L.s1[i] = L.x[i] + L.a[i];
+      if (preLN) {
+        r(L.h).set(r(L.s1));
+        layerNormForward(r(L.h), B, D, P, o("ln2g"), o("ln2b"), r(L.w), r(L.ln2hat), L.ln2r.subarray(dari, T));
+      } else {
+        layerNormForward(r(L.s1), B, D, P, o("ln1g"), o("ln1b"), r(L.h), r(L.ln1hat), L.ln1r.subarray(dari, T));
+        r(L.w).set(r(L.h));
+      }
+      linearForward(r(L.w), B, D, F, P, o("w1"), o("b1"), r(L.f1, F));
+      geluForward(r(L.f1, F), r(L.g, F), B * F);
+      linearForward(r(L.g, F), B, F, D, P, o("w2"), o("b2"), r(L.f2));
+      if (preLN) for (let i = dari * D; i < T * D; i++) L.y[i] = L.h[i] + L.f2[i];
+      else {
+        for (let i = dari * D; i < T * D; i++) L.s2[i] = L.h[i] + L.f2[i];
+        layerNormForward(r(L.s2), B, D, P, o("ln2g"), o("ln2b"), r(L.y), r(L.ln2hat), L.ln2r.subarray(dari, T));
+      }
+      x = L.y;
+    }
+    if (preLN) layerNormForward(r(x), B, D, P, this.off("lnfg"), this.off("lnfb"), r(this.akhir), r(this.lnfhat), this.lnfr.subarray(dari, T));
+    else r(this.akhir).set(r(x));
+    linearForward(r(this.akhir), B, D, V, P, this.off("wout"), this.off("bout"), r(this.logits, V));
+  }
+
+  /**
    * GPT PEMBACA: skor awal & akhir jawaban untuk setiap token.
    *   z_t = h_t · W_span + b_span      (h_t = keluaran blok terakhir, W_span berukuran D×2)
    * Hasil di this.spanZ: [t*2] = skor "jawaban mulai di t", [t*2+1] = skor "jawaban berakhir di t".

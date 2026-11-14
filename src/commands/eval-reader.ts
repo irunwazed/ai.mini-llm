@@ -16,6 +16,7 @@ import { gptTerbaru, muatGPT } from "../gpt/checkpoint.js";
 import { GPT } from "../gpt/model.js";
 import { bagiData, type ContohPembaca } from "../gpt/reader-data.js";
 import { baca, f1Kata } from "../gpt/reader.js";
+import { LOKASI, lokasiBaca } from "../paths.js";
 import { argumen } from "./args.js";
 
 const { opsi } = argumen();
@@ -24,7 +25,7 @@ if (!nama) { console.error("Belum ada GPT pembaca. Jalankan: bun run make-reader
 const { meta, P } = muatGPT(nama);
 const model = new GPT(meta.config, P), tok = new Tokenizer(meta.bpe);
 const ambang = meta.pembaca?.ambang ?? 0.5;
-const data: ContohPembaca[] = readFileSync(opsi.data ?? "data/reader-id.jsonl", "utf8").split(/\r?\n/).filter((l) => l.trim()).map((l) => JSON.parse(l));
+const data: ContohPembaca[] = readFileSync(opsi.data ?? lokasiBaca(LOKASI.pembaca), "utf8").split(/\r?\n/).filter((l) => l.trim()).map((l) => JSON.parse(l));
 const { val } = bagiData(data);
 const maks = Number(opsi.maks ?? 1000);
 const uji = val.filter((_, i) => i % Math.max(1, Math.floor(val.length / maks)) === 0).slice(0, maks);

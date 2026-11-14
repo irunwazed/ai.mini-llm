@@ -10,24 +10,35 @@
  *
  * Pakai:  bun run fetch-data                      (target 10 MB)
  *         bun run fetch-data -- --target-mb 20
- * Keluaran: data/wiki-id.txt dan data/wiki-id.sources.txt (daftar judul + lisensi).
+ * Keluaran: data/mentah/wikipedia/wiki-id.txt dan sumber.txt (daftar judul + lisensi).
  * Bisa dihentikan dan dijalankan lagi: judul yang sudah diunduh dilewati.
+ * Ctrl+C = berhenti dengan aman setelah kelompok artikel yang sedang diunduh. Pantau: bun run status -- --ikuti
  *
  * Lisensi teks Wikipedia: CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/).
  */
-import { appendFileSync, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { Pelacak } from "../gpt/progress.js";
+import { dirname } from "node:path";
+import { LOKASI } from "../paths.js";
 import { argumen } from "./args.js";
 
 const { opsi } = argumen();
 const API = "https://id.wikipedia.org/w/api.php";
-const KELUAR = "data/wiki-id.txt";
-const SUMBER = "data/wiki-id.sources.txt";
+const KELUAR = LOKASI.wikiTeks;
+const SUMBER = LOKASI.wikiJudul;
+// Data lama di lokasi sebelum struktur baru: pindahkan dulu, supaya unduhan melanjutkan file yang sama
+if (!existsSync(KELUAR) && existsSync("data/wiki-id.txt")) {
+  console.error("Teks Wikipedia masih di lokasi lama (data/wiki-id.txt). Pindahkan dulu:  bun run migrasi-data");
+  process.exit(1);
+}
+mkdirSync(dirname(KELUAR), { recursive: true });
 const TARGET = Number(opsi["target-mb"] ?? 10) * 1024 * 1024;
 const JEDA_MS = 1000;
 const HEADERS = { "User-Agent": "llm-from-scratch-learning/0.1 (educational project; low request rate)" };
 const BAGIAN_STOP = /^(referensi|daftar pustaka|pranala luar|catatan kaki|catatan|lihat pula|lihat juga|bacaan lanjutan|sumber|rujukan|bibliografi|galeri)$/i;
 
 const tidur = (ms: number) => new Promise((r) => setTimeout(r, ms));
+let pelacak: Pelacak | null = null;
 
 async function api(params: Record<string, string>): Promise<any> {
   const url = `${API}?${new URLSearchParams({ format: "json", formatversion: "2", maxlag: "5", ...params })}`;
@@ -37,7 +48,8 @@ async function api(params: Record<string, string>): Promise<any> {
       const r = await fetch(url, { headers: HEADERS });
       if (r.status === 429 || r.status >= 500) {
         const tunggu = Number(r.headers.get("retry-after") ?? 0) * 1000 || 5000 * coba;
-        process.stdout.write(`\n  server membatasi (HTTP ${r.status}), menunggu ${Math.round(tunggu / 1000)} detik...`);
+        if (pelacak) pelacak.langkah(ukuran() / 1024 / 1024, { catatan: `server membatasi (HTTP ${r.status}), menunggu ${Math.round(tunggu / 1000)} detik` });
+      else process.stdout.write(`\n  server membatasi (HTTP ${r.status}), menunggu ${Math.round(tunggu / 1000)} detik...`);
         await tidur(tunggu);
         continue;
       }
@@ -122,7 +134,7 @@ const mb = (n: number) => (n / 1024 / 1024).toFixed(1);
 async function unduh(daftar: string[]): Promise<number> {
   let n = 0;
   const baru = daftar.filter((t) => !sudah.has(t));
-  for (let i = 0; i < baru.length && ukuran() < TARGET; i += 50) {
+  for (let i = 0; i < baru.length && ukuran() < TARGET && !pelacak?.berhenti; i += 50) {
     for (const { judul, teks } of await ambilBanyak(baru.slice(i, i + 50))) {
       sudah.add(judul);
       if (teks.length < 1000) continue; // artikel rintisan terlalu pendek
@@ -130,21 +142,29 @@ async function unduh(daftar: string[]): Promise<number> {
       appendFileSync(SUMBER, judul + "\n");
       n++;
     }
-    process.stdout.write(`\r  ${n} artikel, total ${mb(ukuran())} MB   `);
+    pelacak?.langkah(ukuran() / 1024 / 1024, { catatan: `${sudah.size} judul`, kecepatan: n });
   }
   return n;
 }
 
 console.log(`Target ${mb(TARGET)} MB, sekarang ${mb(ukuran())} MB (${sudah.size} judul sudah diunduh).`);
+console.log("(Ctrl+C = berhenti dengan aman · bisa dilanjutkan kapan saja · pantau: bun run status -- --ikuti)");
+pelacak = new Pelacak("fetch-data", "wikipedia", { total: Number(mb(TARGET)), satuan: "MB", satuanKecepatan: "artikel baru" });
+pelacak.langkah(ukuran() / 1024 / 1024);
 for (const kat of ["Kategori:Artikel pilihan", "Kategori:Artikel bagus"]) {
-  if (ukuran() >= TARGET) break;
+  if (ukuran() >= TARGET || pelacak.berhenti) break;
   const daftar = await anggotaKategori(kat);
   console.log(`${kat}: ${daftar.length} judul`);
   const n = await unduh(daftar);
   console.log(`\r  ${n} artikel baru, total ${mb(ukuran())} MB   `);
 }
-while (ukuran() < TARGET) {
+while (ukuran() < TARGET && !pelacak.berhenti) {
   const j = await api({ action: "query", list: "random", rnnamespace: "0", rnlimit: "50" });
   await unduh((j.query?.random ?? []).map((r: any) => String(r.title)));
 }
-console.log(`\nSelesai: ${KELUAR} (${mb(ukuran())} MB, ${sudah.size} judul). Lisensi: CC BY-SA 4.0.`);
+const berhenti = pelacak.berhenti;
+pelacak.tutup(berhenti ? "berhenti" : "selesai", `${mb(ukuran())} MB, ${sudah.size} judul`);
+console.log(berhenti
+  ? `\nDihentikan dengan aman: ${KELUAR} (${mb(ukuran())} MB). Lanjutkan kapan saja dengan perintah yang sama; judul yang sudah ada dilewati.`
+  : `\nSelesai: ${KELUAR} (${mb(ukuran())} MB, ${sudah.size} judul). Lisensi: CC BY-SA 4.0.`);
+console.log("Jangan lupa: bun run index-wiki  (agar chatbot memakai artikel baru)");

@@ -20,14 +20,19 @@
     "lesson:5": "bun lessons/05_mini_gpt.ts",
     "fetch-data": "bun src/commands/fetch-data.ts",
     "chat-gpt": "bun src/commands/chat-gpt.ts",
-    "make-chat-data": "bun src/gpt/chat-data.ts",
+    "make-chat-data": "bun src/commands/make-chat-data.ts",
     "index-wiki": "bun src/commands/index-wiki.ts",
     "web": "bun src/commands/web.ts",
     "eval-chat": "bun src/commands/eval-chat.ts",
     "eval-reasoning": "bun src/commands/eval-reasoning.ts",
     "make-reader-data": "bun src/commands/make-reader-data.ts",
     "train-reader": "bun src/commands/train-reader.ts",
-    "eval-reader": "bun src/commands/eval-reader.ts"
+    "eval-reader": "bun src/commands/eval-reader.ts",
+    "eval-konteks": "bun src/commands/eval-gpt-context.ts",
+    "fetch-jdih": "bun src/commands/fetch-jdih.ts",
+    "status": "bun src/commands/status.ts",
+    "migrasi-data": "bun src/commands/migrate-data.ts",
+    "siapkan-data": "bun src/commands/prepare-data.ts"
   },
   "dependencies": {
     "mammoth": "^1.13.0",
